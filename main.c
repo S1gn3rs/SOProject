@@ -2,23 +2,44 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
+#define _DEFAULT_SOURCE // NÃO SEI SE ISTO NÃO PODE DAR CABO DE ALGUMAS COISAS.....
+#include <dirent.h>
 
 #include "constants.h"
 #include "parser.h"
 #include "operations.h"
 
-int main() {
+int main(int argc, char *argv[]) {
+
+  if (argc < 2 || argc > 4){ // Confirmar se é para manter para stdin  < 2 // check the tab it will add space inside message error
+    fprintf(stderr, "Incorrect arguments.\n Correct use: %s\
+<jobs_directory> [concurrent_backups] [max_threads]\n", argv[0]);
+    return 1;
+  }
+
+  //unsigned int max_backups = 0; ///////////////////////////////////////////////////////////////////////////////
+
+  DIR *directory = opendir(argv[1]);
+  if (directory == NULL){
+    perror("Error while trying to open directory");
+    return 1;
+  }
+
+  struct dirent *entry;
 
   if (kvs_init()) {
     fprintf(stderr, "Failed to initialize KVS\n");
     return 1;
   }
 
-  while (1) {
+  while ((entry = readdir(directory)) != NULL) {
     char keys[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
     char values[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
     unsigned int delay;
     size_t num_pairs;
+
+    if (entry->d_type == DT_REG && strcmp(entry->d_name + strlen(entry->d_name) - 5, ".jobs") == 0) continue; //ver se podemos tirar strlen
 
     printf("> ");
     fflush(stdout);
