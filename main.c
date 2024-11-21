@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#define _DEFAULT_SOURCE // NÃO SEI SE ISTO NÃO PODE DAR CABO DE ALGUMAS COISAS.....
 #include <dirent.h>
 
 #include "constants.h"
