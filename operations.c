@@ -63,7 +63,7 @@ int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
   int length;
 
   if (write(fd, "[", 1) == -1) {
-      perror("Error writing");
+      perror("Error writing\n");
       return 1;
   }
 
@@ -72,20 +72,20 @@ int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
     if (result == NULL) {
       length = snprintf(buffer, MAX_WRITE_SIZE, "(%s,KVSERROR)", keys[i]);
       if (write(fd, buffer, (size_t)length) == -1) {
-        perror("Error writing");
+        perror("Error writing\n");
         return 1;
       }
     } else {
       length = snprintf(buffer, MAX_WRITE_SIZE, "(%s,%s)", keys[i], result);
       if (write(fd, buffer, (size_t)length) == -1) {
-        perror("Error writing");
+        perror("Error writing\n");
         return 1;
       }
     }
     free(result);
   }
   if (write(fd, "]\n", 2) == -1) {
-    perror("Error writing");
+    perror("Error writing\n");
     return 1;
   }
 
@@ -105,20 +105,20 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
       int length = snprintf(buffer, MAX_WRITE_SIZE, "(%s,KVSMISSING)", keys[i]);
       if (!aux) {
         if (write(fd, "[", 1) == -1) {
-          perror("Error writing");
+          perror("Error writing\n");
           return 1;
         }
         aux = 1;
       }
       if (write(fd, buffer, (size_t)length) == -1) {
-        perror("Error writing");
+        perror("Error writing\n");
         return 1;
       }
     }
   }
   if (aux) {
     if (write(fd, "]\n", 2) == -1) {
-      perror("Error writing");
+      perror("Error writing\n");
       return 1;
     }
   }
@@ -135,8 +135,8 @@ int kvs_show(int fd) {
       int length = snprintf(buffer, MAX_WRITE_SIZE, "(%s, %s)\n", keyNode->key, keyNode->value);
       
 
-      if (write(fd, buffer, (size_t)length) == -1) { // 11 is the length of "Waiting...\n" is ok to hardcode this?
-        perror("Error writing");
+      if (write(fd, buffer, (size_t)length) == -1) {
+        perror("Error writing\n");
         return 1;
       }
       keyNode = keyNode->next; // Move to the next node

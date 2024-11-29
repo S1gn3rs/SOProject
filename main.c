@@ -44,8 +44,7 @@ int main(int argc, char *argv[]) {
     size_t num_pairs;
     size_t length_entry_name = strlen(entry->d_name);
 
-    // entry->d_type == DT_REG TODO CHECK IF WE CAN ADD THIS AND THE LINKS TOO-------
-    if (strcmp(entry->d_name + strlen(entry->d_name) - 4, ".job") != 0) continue; //ver se podemos tirar strlen
+    if (length_entry_name < 4 || strcmp(entry->d_name + length_entry_name - 4, ".job") != 0) continue;
     size_t size_in_path = length_dir_name + length_entry_name + 2;
     size_t size_out_path = length_dir_name + length_entry_name + 2;
     char in_path[size_in_path];
@@ -118,7 +117,7 @@ int main(int argc, char *argv[]) {
 
           if (delay > 0) {
             if (write(out_fd, "Waiting...\n", 11) == -1) { // 11 is the length of "Waiting...\n" is ok to hardcode this?
-              perror("Error writing");
+              perror("Error writing\n");
               return 1;
             }
             kvs_wait(delay);
@@ -152,7 +151,7 @@ int main(int argc, char *argv[]) {
         case CMD_EMPTY:
           break;
 
-        case EOC: // acho que isto nao e preciso, seria um EOF
+        case EOC:
           reading_commands = 0;
       }
     }
