@@ -19,9 +19,6 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  //unsigned int max_backups = 0; ///////////////////////////////////////////////////////////////////////////////
-
-
   DIR *directory = opendir(argv[1]);
   size_t length_dir_name = strlen(argv[1]); // Se ele não der um diretorio dá erro?
 
@@ -30,10 +27,21 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  int max_backups = 0;
+  if (argc == 3){
+    if( (max_backups = atoi(argv[2])) < 0){
+      perror("Number of concurrent backups not valid.\n");
+      closedir(directory);
+      return 1;
+    }
+  }
+
+
   struct dirent *entry; // SHOULD WE DECLARE THIS HERE OR AT MAIN START
 
   if (kvs_init()) {
     fprintf(stderr, "Failed to initialize KVS\n");
+    closedir(directory);
     return 1;
   }
 
@@ -56,13 +64,20 @@ int main(int argc, char *argv[]) {
     int in_fd = open(in_path, O_RDONLY);
     if(in_fd == -1){
       perror("File could not be open.\n");
+      closedir(directory);
+      return 1;
     }
 
     int out_fd = open(out_path, O_CREAT | O_TRUNC | O_WRONLY , S_IRUSR | S_IWUSR);
     if(in_fd == -1){
       perror("File could not be open.\n");
+      closedir(directory);
+      return 1;
     }
-  
+
+    int backups_made = 0;
+    int active_backups = 0;
+
     int reading_commands = 1;
     while(reading_commands){
       switch (get_next(in_fd)) {
@@ -125,8 +140,13 @@ int main(int argc, char *argv[]) {
           break;
 
         case CMD_BACKUP:
-          if (kvs_backup()) {
-            fprintf(stderr, "Failed to perform backup.\n");
+
+          pid_t pid;
+          if ((pid = fork()) == 0){ ///////////////////////////////////////////////////////////preciso de pareteses?
+            if (kvs_backup()) {
+              fprintf(stderr, "Failed to perform backup.\n");
+            }
+            return 0;
           }
           break;
 
