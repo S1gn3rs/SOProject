@@ -128,7 +128,11 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
 
 int kvs_show(int fd) {
   for (int i = 0; i < TABLE_SIZE; i++) {
-    KeyNode *keyNode = kvs_table->table[i];
+    IndexList *indexList = kvs_table->table[i];
+    KeyNode *keyNode;
+
+    if (indexList == NULL) continue;
+    keyNode = indexList->head;
     
     char buffer[MAX_WRITE_SIZE];
     while (keyNode != NULL) {
@@ -145,7 +149,25 @@ int kvs_show(int fd) {
   return 0;
 }
 
-int kvs_backup() {
+int kvs_backup(int fd) {
+  for (int i = 0; i < TABLE_SIZE; i++) {
+    IndexList *indexList = kvs_table->table[i];
+    KeyNode *keyNode;
+    
+    if (indexList == NULL) continue;
+    keyNode = indexList->head;
+
+    char buffer[MAX_WRITE_SIZE];
+    while (keyNode != NULL) {
+      int length = snprintf(buffer, MAX_WRITE_SIZE, "(%s, %s)\n", keyNode->key, keyNode->value);
+
+      if (write(fd, buffer, (size_t)length) == -1) {
+        perror("Error writing\n");
+        return 1;
+      }
+      keyNode = keyNode->next;
+    }
+  }
   return 0;
 }
 

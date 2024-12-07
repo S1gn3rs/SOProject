@@ -4,20 +4,28 @@
 #define TABLE_SIZE 26
 
 #include <stddef.h>
+#include <pthread.h>
 
 typedef struct KeyNode {
     char *key;
     char *value;
+    pthread_rwlock_t rwl;
     struct KeyNode *next;
 } KeyNode;
 
+typedef struct IndexList {
+    KeyNode *head;
+    pthread_rwlock_t rwl;
+} IndexList;
+
 typedef struct HashTable {
-    KeyNode *table[TABLE_SIZE];
+    IndexList *table[TABLE_SIZE];
 } HashTable;
+
 
 /// Creates a new event hash table.
 /// @return Newly created hash table, NULL on failure
-struct HashTable *create_hash_table();
+HashTable *create_hash_table();
 
 /// Appends a new key value pair to the hash table.
 /// @param ht Hash table to be modified.

@@ -5,6 +5,8 @@
 #include <string.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <sys/wait.h>
+#include <pthread.h>
 
 #include "constants.h"
 #include "parser.h"
@@ -20,17 +22,26 @@ int main(int argc, char *argv[]) {
   }
 
   DIR *directory = opendir(argv[1]);
-  size_t length_dir_name = strlen(argv[1]); // Se ele não der um diretorio dá erro?
+  size_t length_dir_name = strlen(argv[1]);
 
   if (directory == NULL){
     perror("Error while trying to open directory\n");
     return 1;
   }
 
-  int max_backups = 0;
-  if (argc == 3){
-    if( (max_backups = atoi(argv[2])) < 0){
+  int max_backups = 1;
+  if (argc >= 3){
+    if( (max_backups = atoi(argv[2])) < 1){
       perror("Number of concurrent backups not valid.\n");
+      closedir(directory);
+      return 1;
+    }
+  }
+
+  int max_threads = 1;
+  if (argc == 4){
+    if( (max_threads = atoi(argv[3])) < 1){
+      perror("Number of threads not valid.\n");
       closedir(directory);
       return 1;
     }
@@ -53,13 +64,14 @@ int main(int argc, char *argv[]) {
     size_t length_entry_name = strlen(entry->d_name);
 
     if (length_entry_name < 4 || strcmp(entry->d_name + length_entry_name - 4, ".job") != 0) continue;
-    size_t size_in_path = length_dir_name + length_entry_name + 2;
-    size_t size_out_path = length_dir_name + length_entry_name + 2;
-    char in_path[size_in_path];
-    char out_path[size_out_path];
+    char in_path[MAX_JOB_FILE_NAME_SIZE];
+    char out_path[MAX_JOB_FILE_NAME_SIZE];
+    char bck_path[MAX_JOB_FILE_NAME_SIZE + 3]; // SHOULD BE MORE BC OF NUMBERS??????????????????????????????????????????????????????????????????????????????
 
-    snprintf(in_path, size_in_path, "%s/%s", argv[1], entry->d_name);
-    snprintf(out_path, size_out_path, "%s/%.*s.out", argv[1], (int)length_entry_name - 4, entry->d_name); // este type cast devia de ficar aqui ou nao??????
+    size_t size_path = length_dir_name + length_entry_name + 2;
+
+    snprintf(in_path, size_path, "%s/%s", argv[1], entry->d_name);
+    snprintf(out_path, size_path, "%s/%.*s.out", argv[1], (int)length_entry_name - 4, entry->d_name); // este type cast devia de ficar aqui ou nao??????
 
     int in_fd = open(in_path, O_RDONLY);
     if(in_fd == -1){
@@ -75,6 +87,7 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
+    //max_backups definido em cima --------------------------------------------------------------
     int backups_made = 0;
     int active_backups = 0;
 
@@ -140,13 +153,33 @@ int main(int argc, char *argv[]) {
           break;
 
         case CMD_BACKUP:
-
-          pid_t pid;
-          if ((pid = fork()) == 0){ ///////////////////////////////////////////////////////////preciso de pareteses?
-            if (kvs_backup()) {
+          if (backups_made >= max_backups) {
+              int status;
+              wait(&status);// É SUPOSTO LIDAR COM ERRO CASO BACKUP FALHE
+          }
+          backups_made++;
+          
+          pid_t pid = fork();
+          if(pid == -1){
+                  fprintf(stderr, "Failed to create child process\n");
+                  exit(1);
+          }
+          if (pid == 0){ ///////////////////////////////////////////////////////////preciso de pareteses?
+            // Vai se lixar tudo com treads
+            snprintf(bck_path, size_path + 3, "%s/%.*s-%d.bck", argv[1], (int)length_entry_name - 4, entry->d_name, backups_made);
+            int bck_fd = open(bck_path, O_CREAT | O_TRUNC | O_WRONLY , S_IRUSR | S_IWUSR);
+            
+            if(bck_fd == -1){
+              perror("File could not be open.\n");
+              closedir(directory);
+              return 1;
+            }
+            
+            if (kvs_backup(bck_fd)) {
               fprintf(stderr, "Failed to perform backup.\n");
             }
-            return 0;
+            //sleep(5);
+            // exit(0);
           }
           break;
 
@@ -175,10 +208,12 @@ int main(int argc, char *argv[]) {
           reading_commands = 0;
       }
     }
-  close(in_fd);
-  close(out_fd);
+    close(in_fd);
+    close(out_fd);
+    
+    while (active_backups-- > 0) wait(NULL);
   }
-closedir(directory);
-kvs_terminate();
-return 0;
+  closedir(directory);
+  kvs_terminate();
+  return 0;
 }
