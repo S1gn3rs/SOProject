@@ -20,6 +20,7 @@ typedef struct IndexList {
 
 typedef struct HashTable {
     IndexList *table[TABLE_SIZE];
+    pthread_mutex_t mutex;
 } HashTable;
 
 

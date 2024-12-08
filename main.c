@@ -13,6 +13,12 @@
 #include "operations.h"
 #include <sys/stat.h>
 
+typedef struct ThreadArgs {
+    int in_fd;
+    int out_fd;
+    int thread_id;
+} ThreadArgs;
+
 int main(int argc, char *argv[]) {
 
   if (argc < 2 || argc > 4){ // Confirmar se é para manter para stdin  < 2 // check the tab it will add space inside message error
@@ -56,6 +62,19 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  pthread_t threads[max_threads];
+
+
+  //nao é aqui que se deve criar as threads -------------------------------------------
+  // for(int i = 0; i < max_threads; i++){
+  //   ThreadArgs *args = (struct ThreadArgs *)malloc(sizeof(struct ThreadArgs));
+  //   args->in_fd = input_fd;
+  //   args->out_fd = output_fd;
+  //   args->thread_id = i+1;
+
+  //   pthread_create(&threads[i], NULL, thread_function, (void *)args);
+  // }
+
   while ((entry = readdir(directory)) != NULL) {
     char keys[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
     char values[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
@@ -93,6 +112,7 @@ int main(int argc, char *argv[]) {
 
     int reading_commands = 1;
     while(reading_commands){
+
       switch (get_next(in_fd)) {
         case CMD_WRITE:
           num_pairs = parse_write(in_fd, keys, values, MAX_WRITE_SIZE, MAX_STRING_SIZE);

@@ -44,20 +44,30 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
     int index = hash(key);
     IndexList *indexList = ht->table[index];
     KeyNode *keyNode;
+    //Problema se estiver mais que um a tentar criar o segundo vai perder ponteiro correto !!!!!!!!!!!!
+    if (pthread_mutex_lock(&ht->mutex) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
+        fprintf(stderr, "Error locking table's mutex.\n");
+        return 1;
+    }
     if (indexList == NULL) {
         ht->table[index] = create_IndexList();
         indexList = ht->table[index];
+        pthread_mutex_unlock(&ht->mutex);
+        return 0;
     }
-    if (pthread_rwlock_wrlock(&indexList->rwl) != 0) {
-        fprintf(stderr, "Error locking list rwl\n");
+    pthread_mutex_unlock(&ht->mutex);
+
+    if (pthread_rwlock_rdlock(&indexList->rwl) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
+        fprintf(stderr, "Error locking list rwl,\n");
         return 1;
     }
     keyNode = indexList->head;
     // Search for the key node
     while (keyNode != NULL) {
+
         if (strcmp(keyNode->key, key) == 0) {
-            if (pthread_rwlock_wrlock(&indexList->rwl) != 0) {
-                fprintf(stderr, "Error locking list rwl\n");
+            if (pthread_rwlock_wrlock(&keyNode->rwl) != 0) { //// MAYBE TURN THIS INTO A SINGLE FUNCTION---------------------
+                fprintf(stderr, "Error locking list rwl.\n");
                 return 1;
             }
             free(keyNode->value);
@@ -68,23 +78,35 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
         }
         keyNode = keyNode->next; // Move to the next node
     }
-
-    // Key not found, create a new key node
-    keyNode = malloc(sizeof(KeyNode));
-    keyNode->key = strdup(key); // Allocate memory for the key
-    keyNode->value = strdup(value); // Allocate memory for the value
-    // if(pthread_rwlock_init(&keyNode->rwl, NULL) != 0) {
-        // free(keyNode->key);
-        // free(keyNode->value);
-        // free(keyNode);
-        // return 1;
-    // }
-    keyNode->next = indexList->head; // Link to existing nodes
-    indexList->head = keyNode; // Place new key node at the start of the list
+    
+    if (pthread_rwlock_wrlock(&indexList->head) != 0) {
+        fprintf(stderr, "Error locking list rwl.\n");
+        return 1;
+    }
+    aux_change_head(indexList->head, key, value);
+    pthread_rwlock_unlock(&indexList->head);
 
     pthread_rwlock_unlock(&indexList->rwl);
     return 0;
 }
+
+void aux_change_head(KeyNode *oldKeyNode, const char *key, const char *value){
+    KeyNode *newKeyNode = NULL;
+    if (strcmp(oldKeyNode->value, key) == 0){
+        oldKeyNode->value = strdup(value);
+        return;
+    }
+
+    newKeyNode = malloc(sizeof(KeyNode));
+    newKeyNode->key = strdup(oldKeyNode->key); // Allocate memory for the key
+    newKeyNode->value = strdup(oldKeyNode->value); // Allocate memory for the value
+    newKeyNode->next = oldKeyNode->next; // Link to existing nodes
+    
+    oldKeyNode->key = strdup(sizeof(KeyNode));
+    oldKeyNode->value = strdup(value);
+    oldKeyNode->next = newKeyNode;
+}
+
 
 char* read_pair(HashTable *ht, const char *key) {
     int index = hash(key);
@@ -94,6 +116,11 @@ char* read_pair(HashTable *ht, const char *key) {
 
     if (indexList == NULL) return NULL;
     keyNode = indexList->head;
+
+    if (pthread_rdlock_wrlock(&indexList->rwl) != 0) {
+        fprintf(stderr, "Error locking list rwl\n");
+        return 1; //TIPO DE RETORNO OKAY???????????????????????????????????????????????????????
+    }
 
     while (keyNode != NULL) {
         if (strcmp(keyNode->key, key) == 0) {
@@ -136,6 +163,7 @@ int delete_pair(HashTable *ht, const char *key) {
 }
 
 void free_table(HashTable *ht) {
+
     for (int i = 0; i < TABLE_SIZE; i++) {
         IndexList *indexList = ht->table[i];
         if (indexList == NULL) continue;

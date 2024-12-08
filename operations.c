@@ -33,9 +33,22 @@ int kvs_terminate() {
     fprintf(stderr, "KVS state must be initialized\n");
     return 1;
   }
-
   free_table(kvs_table);
   return 0;
+}
+
+void insertion_sort(size_t *indexs, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
+  for (size_t i = 1; i < num_pairs; i++) {
+    size_t current = indexs[i];
+    size_t j = i;
+
+    while (j > 0 && strcasecmp(keys[indexs[j - 1]], keys[current]) > 0) {
+      indexs[j] = indexs[j - 1];
+      j--;
+    }
+
+    indexs[j] = current;
+  }
 }
 
 int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_STRING_SIZE]) {
@@ -44,14 +57,29 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_
     return 1;
   }
 
+  size_t *indexs = malloc(num_pairs * sizeof(size_t));
+  if (indexs == NULL) {
+    fprintf(stderr, "Failed to allocate memory for index\n");
+    return 1;
+  }
+
   for (size_t i = 0; i < num_pairs; i++) {
-    if (write_pair(kvs_table, keys[i], values[i]) != 0) {
-      fprintf(stderr, "Failed to write keypair (%s,%s)\n", keys[i], values[i]);
+    indexs[i] = i;
+  }
+
+  insertion_sort(indexs, num_pairs, keys);
+
+  for (size_t i = 0; i < num_pairs; i++) {
+    size_t index = indexs[i];
+    if (write_pair(kvs_table, keys[index], values[index]) != 0) {
+      fprintf(stderr, "Failed to write keypair (%s,%s)\n", keys[index], values[index]);
     }
   }
 
+  free(indexs);
   return 0;
 }
+
 
 int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
   if (kvs_table == NULL) {
@@ -67,18 +95,33 @@ int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
       return 1;
   }
 
+  size_t *indexs = malloc(num_pairs * sizeof(size_t));
+  if (indexs == NULL) {
+    fprintf(stderr, "Failed to allocate memory for index\n");
+    return 1;
+  }
+
   for (size_t i = 0; i < num_pairs; i++) {
+    indexs[i] = i;
+  }
+
+  insertion_sort(indexs, num_pairs, keys);
+
+  for (size_t i = 0; i < num_pairs; i++) {
+    size_t index = indexs[i];
     char* result = read_pair(kvs_table, keys[i]);
     if (result == NULL) {
       length = snprintf(buffer, MAX_WRITE_SIZE, "(%s,KVSERROR)", keys[i]);
       if (write(fd, buffer, (size_t)length) == -1) {
         perror("Error writing\n");
+        free(indexs);
         return 1;
       }
     } else {
       length = snprintf(buffer, MAX_WRITE_SIZE, "(%s,%s)", keys[i], result);
       if (write(fd, buffer, (size_t)length) == -1) {
         perror("Error writing\n");
+        free(indexs);
         return 1;
       }
     }
@@ -86,9 +129,10 @@ int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
   }
   if (write(fd, "]\n", 2) == -1) {
     perror("Error writing\n");
+    free(indexs);
     return 1;
   }
-
+  free(indexs);
   return 0;
 }
 
