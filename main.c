@@ -57,7 +57,6 @@ int main(int argc, char *argv[]) {
     }
   }
 
-
   struct dirent *entry; // SHOULD WE DECLARE THIS HERE OR AT MAIN START
 
   if (kvs_init()) {
@@ -202,8 +201,8 @@ int main(int argc, char *argv[]) {
             if (kvs_backup(bck_fd)) {
               fprintf(stderr, "Failed to perform backup.\n");
             }
-            sleep(5);
-            // exit(0);
+            //sleep(5);
+            exit(0);
           }
           break;
 

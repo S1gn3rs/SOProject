@@ -180,12 +180,14 @@ int kvs_show(int fd) {
     if (pthread_rwlock_rdlock_error_check(&indexList->rwl, NULL)) return 1;
 
     keyNode = indexList->head;
-    
+
+    if (keyNode != NULL && strcmp(keyNode->key, "-") == 0) keyNode = keyNode->next;
+
     char buffer[MAX_WRITE_SIZE];
     while (keyNode != NULL) {
       if (pthread_rwlock_rdlock_error_check(&keyNode->rwl, &indexList->rwl)) return 1;
       int length = snprintf(buffer, MAX_WRITE_SIZE, "(%s, %s)\n", keyNode->key, keyNode->value);
-      
+
 
       if (write(fd, buffer, (size_t)length) == -1) {
         pthread_rwlock_unlock(&keyNode->rwl);
@@ -215,6 +217,8 @@ int kvs_backup(int fd) {
         return 1;
     }
     keyNode = indexList->head;
+    
+    if (keyNode != NULL && strcmp(keyNode->key, "-") == 0) keyNode = keyNode->next;
 
     while (keyNode != NULL) {
       if (pthread_rwlock_rdlock(&keyNode->rwl) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
