@@ -3,6 +3,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <strings.h>
 
 
 #include "kvs.h"
@@ -109,16 +110,16 @@ int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
 
   for (size_t i = 0; i < num_pairs; i++) {
     size_t index = indexs[i];
-    char* result = read_pair(kvs_table, keys[i]);
+    char* result = read_pair(kvs_table, keys[index]);
     if (result == NULL) {
-      length = snprintf(buffer, MAX_WRITE_SIZE, "(%s,KVSERROR)", keys[i]);
+      length = snprintf(buffer, MAX_WRITE_SIZE, "(%s,KVSERROR)", keys[index]);
       if (write(fd, buffer, (size_t)length) == -1) {
         perror("Error writing\n");
         free(indexs);
         return 1;
       }
     } else {
-      length = snprintf(buffer, MAX_WRITE_SIZE, "(%s,%s)", keys[i], result);
+      length = snprintf(buffer, MAX_WRITE_SIZE, "(%s,%s)", keys[index], result);
       if (write(fd, buffer, (size_t)length) == -1) {
         perror("Error writing\n");
         free(indexs);
@@ -176,41 +177,78 @@ int kvs_show(int fd) {
     KeyNode *keyNode;
 
     if (indexList == NULL) continue;
+    if (pthread_rwlock_rdlock_error_check(&indexList->rwl, NULL)) return 1;
+
     keyNode = indexList->head;
     
     char buffer[MAX_WRITE_SIZE];
     while (keyNode != NULL) {
+      if (pthread_rwlock_rdlock_error_check(&keyNode->rwl, &indexList->rwl)) return 1;
       int length = snprintf(buffer, MAX_WRITE_SIZE, "(%s, %s)\n", keyNode->key, keyNode->value);
       
 
       if (write(fd, buffer, (size_t)length) == -1) {
+        pthread_rwlock_unlock(&keyNode->rwl);
+        pthread_rwlock_unlock(&indexList->rwl);
         perror("Error writing\n");
         return 1;
       }
+      pthread_rwlock_unlock(&keyNode->rwl);
       keyNode = keyNode->next; // Move to the next node
     }
+    pthread_rwlock_unlock(&indexList->rwl);
   }
   return 0;
 }
 
 int kvs_backup(int fd) {
+
+  char buffer[MAX_WRITE_SIZE];
+
   for (int i = 0; i < TABLE_SIZE; i++) {
     IndexList *indexList = kvs_table->table[i];
     KeyNode *keyNode;
-    
+
     if (indexList == NULL) continue;
+    if (pthread_rwlock_rdlock(&indexList->rwl) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
+        //fprintf(stderr, "Error locking list rwl,\n"); not signal safe
+        return 1;
+    }
     keyNode = indexList->head;
 
-    char buffer[MAX_WRITE_SIZE];
     while (keyNode != NULL) {
-      int length = snprintf(buffer, MAX_WRITE_SIZE, "(%s, %s)\n", keyNode->key, keyNode->value);
-
-      if (write(fd, buffer, (size_t)length) == -1) {
-        perror("Error writing\n");
+      if (pthread_rwlock_rdlock(&keyNode->rwl) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
+        //fprintf(stderr, "Error locking list rwl,\n"); not signal safe
+        pthread_rwlock_unlock(&indexList->rwl);
         return 1;
       }
+      char *key = keyNode->key;
+      char *value = keyNode->value;
+      char *buf_ptr = buffer;
+
+      *buf_ptr++ = '(';
+
+      while(*key && buf_ptr < buffer + MAX_WRITE_SIZE - 4) *buf_ptr++ = *key++;
+
+      *buf_ptr++ = ',';
+      *buf_ptr++ = ' ';
+
+      while(*value && buf_ptr < buffer + MAX_WRITE_SIZE - 2)*buf_ptr++ = *value++;
+
+      *buf_ptr++ = ')';
+      *buf_ptr++ = '\n';
+
+      size_t length = (size_t)(buf_ptr - buffer);
+
+      if (write(fd, buffer, (size_t)length) == -1) {
+        pthread_rwlock_unlock(&keyNode->rwl);
+        pthread_rwlock_unlock(&indexList->rwl);
+        return 1;
+      }
+      pthread_rwlock_unlock(&keyNode->rwl);
       keyNode = keyNode->next;
     }
+    pthread_rwlock_unlock(&indexList->rwl);
   }
   return 0;
 }

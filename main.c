@@ -13,11 +13,15 @@
 #include "operations.h"
 #include <sys/stat.h>
 
-typedef struct ThreadArgs {
-    int in_fd;
-    int out_fd;
-    int thread_id;
-} ThreadArgs;
+// typedef struct ThreadArgs {
+//     int in_fd;
+//     int out_fd;
+//     int thread_id;
+// } ThreadArgs;
+
+// void *thread_function(void *args) {
+
+//}
 
 int main(int argc, char *argv[]) {
 
@@ -62,7 +66,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  pthread_t threads[max_threads];
+  //pthread_t threads[max_threads];
 
 
   //nao é aqui que se deve criar as threads -------------------------------------------
@@ -198,7 +202,7 @@ int main(int argc, char *argv[]) {
             if (kvs_backup(bck_fd)) {
               fprintf(stderr, "Failed to perform backup.\n");
             }
-            //sleep(5);
+            sleep(5);
             // exit(0);
           }
           break;

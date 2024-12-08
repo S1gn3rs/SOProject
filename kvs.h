@@ -23,6 +23,9 @@ typedef struct HashTable {
     pthread_mutex_t mutex;
 } HashTable;
 
+int pthread_rwlock_rdlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t *toUnlock);
+
+int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t *toUnlock);
 
 /// Creates a new event hash table.
 /// @return Newly created hash table, NULL on failure

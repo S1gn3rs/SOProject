@@ -2,11 +2,15 @@
 READ [c1]
 #Criação e escrita de 2 chaves
 WRITE [(c1,v1)(chave2,valor-exemplo)]
+#Leitura de chave existente
+READ [chave2]
+#Escrita de uma chave nova e outra existente
 WRITE [(chave2,valor-exemplo2)(umaChave,umValor)]
-WRITE [(chave3,valor-exemplo3)(duasChave,duasValor)]
-WRITE [(chave4,valor-exemplo4)(tresChave,terceiroValor)]
-WRITE [(chave5,valor-exemplo5)(quartaChave,quartoValor)]
-WRITE [(chave6,valor-exemplo6)(quintaChave,quintaValor)]
-WRITE [(chave7,valor-exemplo7)(sextaChave,sextaValor)]
-
-
+# backup
+BACKUP
+BACKUP
+BACKUP
+# Eliminação de chave existente e de chave não existente
+DELETE [c1,chaveAleatoria]
+BACKUP
+BACKUP
