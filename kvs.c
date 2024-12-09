@@ -1,5 +1,5 @@
 #include "kvs.h"
-#include "string.h"
+#include <string.h>
 #include <stdio.h>
 
 #include <stdlib.h>
@@ -20,13 +20,14 @@ int hash(const char *key) {
     return -1; // Invalid index for non-alphabetic or number strings
 }
 
-
 HashTable* create_hash_table() {
   HashTable *ht = malloc(sizeof(HashTable));
   if (!ht) return NULL;
-  for (int i = 0; i < TABLE_SIZE; i++) {
-      ht->table[i] = NULL;
+  if (pthread_mutex_init(&ht->mutex, NULL) != 0){
+    free(ht);
+    return NULL;
   }
+  for (int i = 0; i < TABLE_SIZE; i++) ht->table[i] = NULL;
   return ht;
 }
 
@@ -34,18 +35,47 @@ IndexList* create_IndexList(const char* key, const char*value){
     IndexList *indexList = malloc(sizeof(IndexList));
     KeyNode *keyNode;
     
-    if (!indexList || pthread_rwlock_init(&indexList->rwl, NULL) != 0) return NULL;
-    
+    if (!indexList) return NULL;
+    if (pthread_rwlock_init(&indexList->rwl, NULL) != 0){
+        free(indexList);
+        return NULL;
+    }
+
     keyNode = malloc(sizeof(KeyNode));
-    keyNode->key = strdup(key);
-    keyNode->value = strdup(value);
+    if (!keyNode){
+        pthread_rwlock_destroy(&indexList->rwl);
+        free(indexList);
+        return NULL;
+    }
+    if (pthread_rwlock_init(&keyNode->rwl, NULL) != 0){
+        pthread_rwlock_destroy(&indexList->rwl);
+        free(keyNode);
+        free(indexList);
+        return NULL;
+    }
+    if (!(keyNode->key = strdup(key))) {
+        pthread_rwlock_destroy(&keyNode->rwl);
+        pthread_rwlock_destroy(&indexList->rwl);
+        free(keyNode);
+        free(indexList);
+        return NULL;
+    }
+    if (!(keyNode->value = strdup(value))) {
+        free(keyNode->key);
+        pthread_rwlock_destroy(&keyNode->rwl);
+        pthread_rwlock_destroy(&indexList->rwl);
+        free(keyNode);
+        free(indexList);
+        return NULL;
+    }
+    keyNode->next = NULL;
     indexList->head = keyNode;
     return indexList;
 }
 
 int pthread_rwlock_rdlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t *toUnlock){
     if (pthread_rwlock_rdlock(rwlock) != 0) {
-        if (toUnlock != NULL) pthread_rwlock_unlock(toUnlock);
+        if (toUnlock != NULL) pthread_rwlock_unlock(toUnlock); // if first unlock get an error unlock toUnlock
         fprintf(stderr, "Error locking list rwl,\n");
         return 1;
     }
@@ -61,25 +91,32 @@ int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t
     return 0;
 }
 
-
-
-void aux_change_head(KeyNode *baseKeyNode, const char *key, const char *value){
+int aux_change_head(KeyNode *baseKeyNode, const char *key, const char *value){
     KeyNode *newKeyNode = baseKeyNode->next;
     
     if (strcmp(baseKeyNode->value, key) == 0){
+        free(baseKeyNode->value);
         baseKeyNode->value = strdup(value);
-        return;
+        return 0;
     }
 
     if (strcmp(baseKeyNode->key, "-") != 0){
         newKeyNode = malloc(sizeof(KeyNode));
+        if (!newKeyNode) return 1;
+        if (pthread_rwlock_init(&newKeyNode->rwl, NULL) != 0){
+            free(newKeyNode);
+            return 1;
+        }
         newKeyNode->key = strdup(baseKeyNode->key); // Allocate memory for the key
         newKeyNode->value = strdup(baseKeyNode->value); // Allocate memory for the value
         newKeyNode->next = baseKeyNode->next; // Link to existing nodes
     }
+    free(baseKeyNode->key);
     baseKeyNode->key = strdup(key);
+    free(baseKeyNode->value);
     baseKeyNode->value = strdup(value);
     baseKeyNode->next = newKeyNode;
+    return 0;
 }
 
 int write_pair(HashTable *ht, const char *key, const char *value) {
@@ -118,7 +155,7 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
     }
     
     if (pthread_rwlock_wrlock_error_check(&indexList->head->rwl, NULL)) return 1;
-    aux_change_head(indexList->head, key, value);
+    if (aux_change_head(indexList->head, key, value)) return 1;
     pthread_rwlock_unlock(&indexList->head->rwl);
 
     pthread_rwlock_unlock(&indexList->rwl);
@@ -189,7 +226,10 @@ int delete_pair(HashTable *ht, const char *key) {
             free(keyNode->key);
             free(keyNode->value);
             
-            if (keyNode != indexList->head) free(keyNode); // Free the key node itself
+            if (keyNode != indexList->head){
+                pthread_rwlock_destroy(&keyNode->rwl); // Destroy the rwlock
+                free(keyNode); // Free the key node itself
+            }
             else{
                 keyNode->key = strdup("-");
                 keyNode->value = strdup("-");
@@ -214,11 +254,14 @@ void free_table(HashTable *ht) {
         while (keyNode != NULL) {
             KeyNode *temp = keyNode;
             keyNode = keyNode->next;
+            pthread_rwlock_destroy(&temp->rwl);
             free(temp->key);
             free(temp->value);
             free(temp);
         }
+        pthread_rwlock_destroy(&indexList->rwl);
         free(indexList);
     }
+    pthread_mutex_destroy(&ht->mutex);
     free(ht);
 }

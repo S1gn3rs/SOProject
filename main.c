@@ -20,8 +20,14 @@
 // } ThreadArgs;
 
 // void *thread_function(void *args) {
+//   char keys[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
+//   char values[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
+//   unsigned int delay;
+//   size_t num_pairs;
 
-//}
+//   ThreadArgs *thread_args = (ThreadArgs *)args;
+
+// }
 
 int main(int argc, char *argv[]) {
 
@@ -67,17 +73,6 @@ int main(int argc, char *argv[]) {
 
   //pthread_t threads[max_threads];
 
-
-  //nao é aqui que se deve criar as threads -------------------------------------------
-  // for(int i = 0; i < max_threads; i++){
-  //   ThreadArgs *args = (struct ThreadArgs *)malloc(sizeof(struct ThreadArgs));
-  //   args->in_fd = input_fd;
-  //   args->out_fd = output_fd;
-  //   args->thread_id = i+1;
-
-  //   pthread_create(&threads[i], NULL, thread_function, (void *)args);
-  // }
-
   while ((entry = readdir(directory)) != NULL) {
     char keys[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
     char values[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
@@ -112,6 +107,15 @@ int main(int argc, char *argv[]) {
     //max_backups definido em cima --------------------------------------------------------------
     int backups_made = 0;
     int active_backups = 0;
+
+    // for(int i = 0; i < max_threads; i++){
+    //   ThreadArgs *args = malloc(sizeof(ThreadArgs)); // DESCONTA SE NÃO TIVER TYPE CAST?????????????????
+    //   args->in_fd = in_fd;
+    //   args->out_fd = out_fd;
+    //   args->thread_id = i;
+
+    //   pthread_create(&threads[i], NULL, thread_function, (void *)args);
+    // }
 
     int reading_commands = 1;
     while(reading_commands){
@@ -202,6 +206,8 @@ int main(int argc, char *argv[]) {
               fprintf(stderr, "Failed to perform backup.\n");
             }
             //sleep(5);
+            kvs_terminate();
+            closedir(directory);
             exit(0);
           }
           break;
