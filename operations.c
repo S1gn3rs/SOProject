@@ -235,6 +235,7 @@ int kvs_backup(int fd) {
       printf("%s\n", keyNode->key);
       if (pthread_rwlock_rdlock(&keyNode->rwl) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
         //fprintf(stderr, "Error locking list rwl,\n"); not signal safe
+        printf("blablablablabla\n");
         pthread_rwlock_unlock(&indexList->rwl);
         return 1;
       }

@@ -73,6 +73,7 @@ void *thread_function(void *args) {
         if (kvs_write(num_pairs, keys, values)) {
           fprintf(stderr, "Failed to write pair\n");
         }
+        pthread_cond_signal(&condBackups);
 
         break;
 
@@ -263,7 +264,11 @@ int main(int argc, char *argv[]) {
   closedir(directory);
 
   kvs_terminate();
-  while (active_backups-- > 0) wait(NULL);
-
+  printf("terminated\n");
+  while (active_backups-- > 0){ 
+    printf("Waiting\n");
+    wait(NULL);
+  }
+  printf("here\n");
   return 0;
 }

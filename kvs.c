@@ -110,6 +110,7 @@ int aux_change_head(KeyNode *baseKeyNode, const char *key, const char *value){
         newKeyNode->key = strdup(baseKeyNode->key); // Allocate memory for the key
         newKeyNode->value = strdup(baseKeyNode->value); // Allocate memory for the value
         newKeyNode->next = baseKeyNode->next; // Link to existing nodes
+        printf("CAN WRITE SECOND KEY/VALUE\n");
     }
     free(baseKeyNode->key);
     baseKeyNode->key = strdup(key);
@@ -168,8 +169,10 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
     if (pthread_rwlock_wrlock_error_check(&indexList->head->rwl, NULL)) return 1;
     if (aux_change_head(indexList->head, key, value)) return 1;
     pthread_rwlock_unlock(&indexList->head->rwl);
+    printf("BEFORE UNLOCK LIST\n");
 
     pthread_rwlock_unlock(&indexList->rwl);
+    printf("END WRITE PAIR FUNCTION\n");
     return 0;
 }
 
@@ -222,7 +225,7 @@ int delete_pair(HashTable *ht, const char *key) {
     int index = hash(key);
     IndexList *indexList = ht->table[index];
     KeyNode *keyNode, *prevNode = NULL;
-    
+
     if (pthread_rwlock_wrlock_error_check(&indexList->rwl, NULL)) return 1;
     keyNode = indexList->head;
 
@@ -240,7 +243,7 @@ int delete_pair(HashTable *ht, const char *key) {
             // Free the memory allocated for the key and value
             free(keyNode->key);
             free(keyNode->value);
-            
+
             if (keyNode != indexList->head){
                 pthread_rwlock_destroy(&keyNode->rwl); // Destroy the rwlock
                 free(keyNode); // Free the key node itself
@@ -255,7 +258,6 @@ int delete_pair(HashTable *ht, const char *key) {
         prevNode = keyNode; // Move prevNode to current node
         keyNode = keyNode->next; // Move to the next node
     }
-    
     pthread_rwlock_unlock(&indexList->rwl);
     return 1;
 }
