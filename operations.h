@@ -3,8 +3,6 @@
 
 #include <stddef.h>
 
-//////////////////ACRESCENTAR COMENTARIO DOS ARGUMENTOS FDs////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// Initializes the KVS state.
 /// @return 0 if the KVS state was initialized successfully, 1 otherwise.
 int kvs_init();
@@ -52,6 +50,8 @@ void kvs_wait_backup();
 /// @param delay_ms Delay in milliseconds.
 void kvs_wait(unsigned int delay_ms);
 
+/// Do a safe fork with all nodes of the hashTable unlocked.
+/// @return child's pid to parent process and 0 to child process
 pid_t do_fork();
 
 #endif  // KVS_OPERATIONS_H

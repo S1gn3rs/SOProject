@@ -37,6 +37,8 @@ int kvs_terminate() {
   free_table(kvs_table);
   return 0;
 }
+
+
 void hash_table_wrlock(){
   pthread_rwlock_wrlock_error_check(&kvs_table->rwl, NULL);
 }
