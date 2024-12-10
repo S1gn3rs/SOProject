@@ -52,4 +52,6 @@ void kvs_wait_backup();
 /// @param delay_ms Delay in milliseconds.
 void kvs_wait(unsigned int delay_ms);
 
+pid_t do_fork();
+
 #endif  // KVS_OPERATIONS_H

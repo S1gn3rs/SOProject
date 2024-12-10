@@ -14,7 +14,6 @@
 #include <sys/stat.h>
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t condBackups = PTHREAD_COND_INITIALIZER;
 
 typedef struct ThreadArgs {
     char *dir_name;
@@ -81,7 +80,6 @@ void *thread_function(void *args) {
           if (kvs_write(num_pairs, keys, values)) {
             fprintf(stderr, "Failed to write pair\n");
           }
-          // pthread_cond_signal(&condBackups);
 
           break;
 
@@ -140,8 +138,7 @@ void *thread_function(void *args) {
           else active_backups++;
           backups_made++;
           pthread_mutex_unlock(&mutex);
-
-          pid_t pid = fork();
+          pid_t pid = do_fork();
           if(pid == -1){
                   fprintf(stderr, "Failed to create child process\n");
                   exit(1);
@@ -258,11 +255,6 @@ int main(int argc, char *argv[]) {
   free(args);
   closedir(directory);
   kvs_terminate();
-  printf("terminated\n");
-  while (active_backups-- > 0){
-    printf("Waiting\n");
-    wait(NULL);
-  }
-  printf("here\n");
+  while (active_backups-- > 0) wait(NULL);
   return 0;
 }

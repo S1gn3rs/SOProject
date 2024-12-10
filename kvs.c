@@ -20,57 +20,29 @@ int hash(const char *key) {
     return -1; // Invalid index for non-alphabetic or number strings
 }
 
-HashTable* create_hash_table() {
-  HashTable *ht = malloc(sizeof(HashTable));
-  if (!ht) return NULL;
-  if (pthread_mutex_init(&ht->mutex, NULL) != 0){
-    free(ht);
-    return NULL;
-  }
-  for (int i = 0; i < TABLE_SIZE; i++) ht->table[i] = NULL;
-  return ht;
-}
-
-IndexList* create_IndexList(const char* key, const char*value){
+IndexList* create_IndexList(){
     IndexList *indexList = malloc(sizeof(IndexList));
-    KeyNode *keyNode;
 
     if (!indexList) return NULL;
     if (pthread_rwlock_init(&indexList->rwl, NULL) != 0){
         free(indexList);
         return NULL;
     }
-
-    keyNode = malloc(sizeof(KeyNode));
-    if (!keyNode){
-        pthread_rwlock_destroy(&indexList->rwl);
-        free(indexList);
-        return NULL;
-    }
-    if (pthread_rwlock_init(&keyNode->rwl, NULL) != 0){
-        pthread_rwlock_destroy(&indexList->rwl);
-        free(keyNode);
-        free(indexList);
-        return NULL;
-    }
-    if (!(keyNode->key = strdup(key))) {
-        pthread_rwlock_destroy(&keyNode->rwl);
-        pthread_rwlock_destroy(&indexList->rwl);
-        free(keyNode);
-        free(indexList);
-        return NULL;
-    }
-    if (!(keyNode->value = strdup(value))) {
-        free(keyNode->key);
-        pthread_rwlock_destroy(&keyNode->rwl);
-        pthread_rwlock_destroy(&indexList->rwl);
-        free(keyNode);
-        free(indexList);
-        return NULL;
-    }
-    keyNode->next = NULL;
-    indexList->head = keyNode;
+    indexList->head = NULL;
     return indexList;
+}
+
+HashTable* create_hash_table() {
+  HashTable *ht = malloc(sizeof(HashTable));
+  if (!ht) return NULL;
+  if (pthread_rwlock_init(&ht->rwl, NULL) != 0){
+    free(ht);
+    return NULL;
+  }
+  for (int i = 0; i < TABLE_SIZE; i++){
+    ht->table[i] = create_IndexList();
+  }
+  return ht;
 }
 
 int pthread_rwlock_rdlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t *toUnlock){
@@ -91,142 +63,80 @@ int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t
     return 0;
 }
 
-int aux_change_head(KeyNode *baseKeyNode, const char *key, const char *value){
-    KeyNode *newKeyNode = baseKeyNode->next;
-
-    if (strcmp(baseKeyNode->value, key) == 0){
-        free(baseKeyNode->value);
-        baseKeyNode->value = strdup(value);
-        return 0;
-    }
-
-    if (strcmp(baseKeyNode->key, "-") != 0){
-        newKeyNode = malloc(sizeof(KeyNode));
-        if (!newKeyNode) return 1;
-        if (pthread_rwlock_init(&newKeyNode->rwl, NULL) != 0){
-            free(newKeyNode);
-            return 1;
-        }
-        newKeyNode->key = strdup(baseKeyNode->key); // Allocate memory for the key
-        newKeyNode->value = strdup(baseKeyNode->value); // Allocate memory for the value
-        newKeyNode->next = baseKeyNode->next; // Link to existing nodes
-        printf("CAN WRITE SECOND KEY/VALUE\n");
-    }
-    free(baseKeyNode->key);
-    baseKeyNode->key = strdup(key);
-    free(baseKeyNode->value);
-    baseKeyNode->value = strdup(value);
-    baseKeyNode->next = newKeyNode;
-    return 0;
-}
 
 int write_pair(HashTable *ht, const char *key, const char *value) {
     int index = hash(key);
-    KeyNode *keyNode;
-    //Problema se estiver mais que um a tentar criar o segundo vai perder ponteiro correto !!!!!!!!!!!!
-    if (pthread_mutex_lock(&ht->mutex) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
-        fprintf(stderr, "Error locking table's mutex.\n");
-        return 1;
-    }
+    KeyNode *keyNode, *newKeyNode;
+    //Problema se estiver mais que um a tentar criar o segundo vai perder ponteiro correto !!!!!!!!!!!!//////////////////777
+    //if (pthread_rwlock_wrlock_error_check(&ht->rwl, NULL) != 0) return 1;
     IndexList *indexList = ht->table[index];
-    if (indexList == NULL) {
-        ht->table[index] = create_IndexList(key, value);
-        if (ht->table[index] == NULL) return 1;
-        indexList = ht->table[index];
-        pthread_mutex_unlock(&ht->mutex);
-        return 0;
-    }
-    pthread_mutex_unlock(&ht->mutex);
 
-    if (pthread_rwlock_rdlock_error_check(&indexList->rwl, NULL)) return 1;
+    //pthread_rwlock_unlock(&ht->rwl);
 
-    if (pthread_rwlock_wrlock_error_check(&indexList->head->rwl, &indexList->rwl)) return 1;
+    //if (pthread_rwlock_rdlock_error_check(&ht->rwl, NULL) != 0) return 1;
+
+    //if (pthread_rwlock_wrlock_error_check(&indexList->rwl, &ht->rwl)) return 1;
+
     keyNode = indexList->head;
-    if (strcmp(keyNode->key, key) == 0){
-        free(keyNode->value);
-        keyNode->value = strdup(value);
-        pthread_rwlock_unlock(&indexList->head->rwl);
-        pthread_rwlock_unlock(&indexList->rwl);
-        return 0;
-    }
-    keyNode = keyNode->next;
-    pthread_rwlock_unlock(&indexList->head->rwl);
     // Search for the key node
     while (keyNode != NULL) {
 
         if (strcmp(keyNode->key, key) == 0) {
-            if (pthread_rwlock_wrlock_error_check(&keyNode->rwl, &indexList->rwl)) return 1;
-
             free(keyNode->value);
             keyNode->value = strdup(value);
-            pthread_rwlock_unlock(&keyNode->rwl);
-            pthread_rwlock_unlock(&indexList->rwl);
+            //pthread_rwlock_unlock(&indexList->rwl);
+            //pthread_rwlock_unlock(&ht->rwl);
             return 0;
         }
         keyNode = keyNode->next; // Move to the next node
     }
 
-    if (pthread_rwlock_wrlock_error_check(&indexList->head->rwl, NULL)) return 1;
-    if (aux_change_head(indexList->head, key, value)) return 1;
-    pthread_rwlock_unlock(&indexList->head->rwl);
-    printf("BEFORE UNLOCK LIST\n");
+    newKeyNode = malloc(sizeof(KeyNode));
+    newKeyNode->key = strdup(key);
+    newKeyNode->value = strdup(value);
+    newKeyNode->next = (indexList->head != NULL)? indexList->head->next : NULL;
+    indexList->head = newKeyNode;
 
-    pthread_rwlock_unlock(&indexList->rwl);
-    printf("END WRITE PAIR FUNCTION\n");
+    //pthread_rwlock_unlock(&indexList->rwl);
+    //pthread_rwlock_unlock(&ht->rwl);
     return 0;
 }
 
 
 char* read_pair(HashTable *ht, const char *key) {
     int index = hash(key);
-    KeyNode *keyNode, *nextKeyNode;
+    KeyNode *keyNode;
     char* value;
-    if (pthread_mutex_lock(&ht->mutex) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
-        fprintf(stderr, "Error locking table's mutex.\n");
-        return NULL;
-    }
+    if (pthread_rwlock_rdlock_error_check(&ht->rwl, NULL) != 0) return NULL;
+
     IndexList *indexList = ht->table[index];
-    pthread_mutex_unlock(&ht->mutex);
 
-    if (indexList == NULL) return NULL;
-
-    if (pthread_rwlock_rdlock_error_check(&indexList->rwl, NULL)) return NULL;
+    if (pthread_rwlock_rdlock_error_check(&indexList->rwl, &ht->rwl)) return NULL;
     keyNode = indexList->head;
-
-    if(keyNode == NULL || pthread_rwlock_rdlock_error_check(&keyNode->rwl, &indexList->rwl)) return NULL;
-
-    if (strcmp(keyNode->key, key) == 0) {
-        value = strdup(keyNode->value);
-        pthread_rwlock_unlock(&keyNode->rwl);
-        pthread_rwlock_unlock(&indexList->rwl);
-        return value;
-    }
-    nextKeyNode = keyNode->next;
-    pthread_rwlock_unlock(&keyNode->rwl);
-    keyNode = nextKeyNode;
 
     while (keyNode != NULL) {
         if (strcmp(keyNode->key, key) == 0) {
-            if (pthread_rwlock_rdlock_error_check(&keyNode->rwl, &indexList->rwl)) return NULL;
             value = strdup(keyNode->value);
-            pthread_rwlock_unlock(&keyNode->rwl);
             pthread_rwlock_unlock(&indexList->rwl);
+            pthread_rwlock_unlock(&ht->rwl);
             return value; // Return copy of the value if found
         }
         keyNode = keyNode->next; // Move to the next node
     }
 
     pthread_rwlock_unlock(&indexList->rwl);
+    pthread_rwlock_unlock(&ht->rwl);
     return NULL; // Key not found
 }
 
 
 int delete_pair(HashTable *ht, const char *key) {
     int index = hash(key);
-    IndexList *indexList = ht->table[index];
+    IndexList *indexList;
     KeyNode *keyNode, *prevNode = NULL;
-
-    if (pthread_rwlock_wrlock_error_check(&indexList->rwl, NULL)) return 1;
+    if (pthread_rwlock_rdlock_error_check(&ht->rwl, NULL)) return 1;
+    indexList = ht->table[index];
+    if (pthread_rwlock_wrlock_error_check(&indexList->rwl, &ht->rwl)) return 1;
     keyNode = indexList->head;
 
     // Search for the key node
@@ -245,7 +155,6 @@ int delete_pair(HashTable *ht, const char *key) {
             free(keyNode->value);
 
             if (keyNode != indexList->head){
-                pthread_rwlock_destroy(&keyNode->rwl); // Destroy the rwlock
                 free(keyNode); // Free the key node itself
             }
             else{
@@ -253,12 +162,14 @@ int delete_pair(HashTable *ht, const char *key) {
                 keyNode->value = strdup("-");
             }
             pthread_rwlock_unlock(&indexList->rwl);
+            pthread_rwlock_unlock(&ht->rwl);
             return 0; // Exit the function
         }
         prevNode = keyNode; // Move prevNode to current node
         keyNode = keyNode->next; // Move to the next node
     }
     pthread_rwlock_unlock(&indexList->rwl);
+    pthread_rwlock_unlock(&ht->rwl);
     return 1;
 }
 
@@ -271,7 +182,6 @@ void free_table(HashTable *ht) {
         while (keyNode != NULL) {
             KeyNode *temp = keyNode;
             keyNode = keyNode->next;
-            pthread_rwlock_destroy(&temp->rwl);
             free(temp->key);
             free(temp->value);
             free(temp);
@@ -279,6 +189,35 @@ void free_table(HashTable *ht) {
         pthread_rwlock_destroy(&indexList->rwl);
         free(indexList);
     }
-    pthread_mutex_destroy(&ht->mutex);
+    pthread_rwlock_destroy(&ht->rwl);
     free(ht);
 }
+
+// void free_table(HashTable *ht){
+//     pthread_t threads[TABLE_SIZE];
+//     for (int i = 0; i < TABLE_SIZE; i++){
+//         if (pthread_create(&threads[i], NULL, thread_clean_list, (void *) ht->table[i]) != 0){
+//             fprintf()
+//         }
+//     }
+//     for (int i = 0; i < TABLE_SIZE; i++){
+//         pthread_join(threads[i], NULL);
+//     }
+// }
+
+
+// void *thread_clean_list(void *args){
+//     IndexList *indexList = (IndexList*) args;
+//     if (indexList == NULL) return NULL;
+//         KeyNode *keyNode = indexList->head;
+//         while (keyNode != NULL) {
+//             KeyNode *temp = keyNode;
+//             keyNode = keyNode->next;
+//             free(temp->key);
+//             free(temp->value);
+//             free(temp);
+//         }
+//     pthread_rwlock_destroy(&indexList->rwl);
+//     free(indexList);
+//     return NULL;
+// }

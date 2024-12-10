@@ -6,11 +6,18 @@
 #READ [chave2]
 #Escrita de uma chave nova e outra existente
 #WRITE [(chave2,valor-exemplo2)(umaChave,umValor)]
-# backup
+#backup
 #BACKUP
 #BACKUP
 #BACKUP
 # Eliminação de chave existente e de chave não existente
 #DELETE [c1,chaveAleatoria]
+#WRITE [(cbhave2,valor-exemplo2)(umaChave,umValor)]
+#DELETE [c1,chaveAleatoria]
+#WRITE [(cave2,valor-exemplo2)(umaChave,umValor)]
 #BACKUP
 #BACKUP
+BACKUP
+BACKUP
+BACKUP
+BACKUP

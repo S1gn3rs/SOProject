@@ -37,6 +37,25 @@ int kvs_terminate() {
   free_table(kvs_table);
   return 0;
 }
+void hash_table_wrlock(){
+  pthread_rwlock_wrlock_error_check(&kvs_table->rwl, NULL);
+}
+
+void hash_table_rdlock(){
+  pthread_rwlock_rdlock_error_check(&kvs_table->rwl, NULL);
+}
+
+void hash_table_unlock(){
+  pthread_rwlock_unlock(&kvs_table->rwl);
+}
+
+void hash_table_list_wrlock(size_t index){
+  pthread_rwlock_wrlock_error_check(&kvs_table->table[index]->rwl, &kvs_table->rwl);
+}
+
+void hash_table_list_unlock(size_t index){
+  pthread_rwlock_unlock(&kvs_table->table[index]->rwl);
+}
 
 void insertion_sort(size_t *indexs, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
   for (size_t i = 1; i < num_pairs; i++) {
@@ -53,6 +72,8 @@ void insertion_sort(size_t *indexs, size_t num_pairs, char keys[][MAX_STRING_SIZ
 }
 
 int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_STRING_SIZE]) {
+  int isLocked[26] = {0}; // To indicate witch indices have been locked
+
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
     return 1;
@@ -68,15 +89,26 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_
     indexs[i] = i;
   }
 
-  insertion_sort(indexs, num_pairs, keys);
+  hash_table_rdlock();
 
+  insertion_sort(indexs, num_pairs, keys);
   for (size_t i = 0; i < num_pairs; i++) {
-    size_t index = indexs[i];
-    if (write_pair(kvs_table, keys[index], values[index]) != 0) {
-      fprintf(stderr, "Failed to write keypair (%s,%s)\n", keys[index], values[index]);
+    size_t indexNodes = indexs[i];
+    size_t indexList = (size_t) hash(keys[indexNodes]);
+    if (isLocked[indexList] == 0){
+      isLocked[indexList] = 1;
+      hash_table_list_wrlock(indexList);
+    }
+    if (write_pair(kvs_table, keys[indexNodes], values[indexNodes]) != 0) {
+
+      fprintf(stderr, "Failed to write keypair (%s,%s)\n", keys[indexNodes], values[indexNodes]);
     }
   }
 
+  for (size_t ind = 0; ind < 26; ind++)
+    if (isLocked[ind]) hash_table_list_unlock(ind);
+
+  hash_table_unlock();
   free(indexs);
   return 0;
 }
@@ -143,7 +175,7 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
     return 1;
   }
   int aux = 0;
-  
+
   char buffer[MAX_WRITE_SIZE];
   for (size_t i = 0; i < num_pairs; i++) {
     if (delete_pair(kvs_table, keys[i]) != 0) {
@@ -172,48 +204,39 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
 }
 
 int kvs_show(int fd) {
+  if (pthread_rwlock_wrlock_error_check(&kvs_table->rwl, NULL) != 0) return 1;
+
   for (int i = 0; i < TABLE_SIZE; i++) {
-    if (pthread_mutex_lock(&kvs_table->mutex) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
-      fprintf(stderr, "Error locking table's mutex.\n");
-      return 1;
-    }
     IndexList *indexList = kvs_table->table[i];
-    pthread_mutex_unlock(&kvs_table->mutex);
-    KeyNode *keyNode, *tempNode;
+    KeyNode *keyNode; //*tempNode;
 
     if (indexList == NULL) continue;
-    if (pthread_rwlock_rdlock_error_check(&indexList->rwl, NULL)) return 1;
+    // if (pthread_rwlock_rdlock_error_check(&indexList->rwl, NULL)) return 1;
 
 
     keyNode = indexList->head;
 
-    if(keyNode == NULL || pthread_rwlock_rdlock_error_check(&keyNode->rwl, &indexList->rwl)) return 1;
+    // if(keyNode == NULL || pthread_rwlock_rdlock_error_check(&keyNode->rwl, &indexList->rwl)) return 1;
     if (keyNode != NULL && strcmp(keyNode->key, "-") == 0) keyNode = keyNode->next;
-    pthread_rwlock_unlock(&keyNode->rwl);
+    // pthread_rwlock_unlock(&keyNode->rwl);
 
     char buffer[MAX_WRITE_SIZE];
     while (keyNode != NULL) {
-      if (pthread_rwlock_rdlock_error_check(&keyNode->rwl, &indexList->rwl)) return 1;
       int length = snprintf(buffer, MAX_WRITE_SIZE, "(%s, %s)\n", keyNode->key, keyNode->value);
 
-
       if (write(fd, buffer, (size_t)length) == -1) {
-        pthread_rwlock_unlock(&keyNode->rwl);
-        pthread_rwlock_unlock(&indexList->rwl);
+        pthread_rwlock_unlock(&kvs_table->rwl);
         perror("Error writing\n");
         return 1;
       }
-      tempNode = keyNode;
       keyNode = keyNode->next; // Move to the next node
-      pthread_rwlock_unlock(&tempNode->rwl);
     }
-    pthread_rwlock_unlock(&indexList->rwl);
   }
+  pthread_rwlock_unlock(&kvs_table->rwl);
   return 0;
 }
 
 int kvs_backup(int fd) {
-  printf("alb11\n");
   char buffer[MAX_WRITE_SIZE];
 
   for (int i = 0; i < TABLE_SIZE; i++) {
@@ -221,64 +244,46 @@ int kvs_backup(int fd) {
     KeyNode *keyNode;
 
     if (indexList == NULL) continue;
-    if (pthread_rwlock_rdlock(&indexList->rwl) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
-        //fprintf(stderr, "Error locking list rwl,\n"); not signal safe
-        return 1;
-    }
 
     keyNode = indexList->head;
 
     if (keyNode != NULL && strcmp(keyNode->key, "-") == 0) keyNode = keyNode->next;
 
     while (keyNode != NULL) {
-      printf("while\n");
-      printf("%s\n", keyNode->key);
-      if (pthread_rwlock_rdlock(&keyNode->rwl) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
-        //fprintf(stderr, "Error locking list rwl,\n"); not signal safe
-        printf("blablablablabla\n");
-        pthread_rwlock_unlock(&indexList->rwl);
-        return 1;
-      }
-      printf("BUG HERE\n");
       char *key = keyNode->key;
       char *value = keyNode->value;
       char *buf_ptr = buffer;
 
       *buf_ptr++ = '(';
 
-      while(*key && buf_ptr < buffer + MAX_WRITE_SIZE - 4){
-        *buf_ptr++ = *key++;
-        printf("while2\n");
-      } 
+      while(*key && buf_ptr < buffer + MAX_WRITE_SIZE - 4) *buf_ptr++ = *key++;
 
       *buf_ptr++ = ',';
       *buf_ptr++ = ' ';
 
-      while(*value && buf_ptr < buffer + MAX_WRITE_SIZE - 2){
-        *buf_ptr++ = *value++;
-        printf("while3\n");
-      }
+      while(*value && buf_ptr < buffer + MAX_WRITE_SIZE - 2) *buf_ptr++ = *value++;
 
       *buf_ptr++ = ')';
       *buf_ptr++ = '\n';
 
       size_t length = (size_t)(buf_ptr - buffer);
 
-      if (write(fd, buffer, (size_t)length) == -1) {
-        pthread_rwlock_unlock(&keyNode->rwl);
-        pthread_rwlock_unlock(&indexList->rwl);
-        return 1;
-      }
-      pthread_rwlock_unlock(&keyNode->rwl);
+      if (write(fd, buffer, (size_t)length) == -1) return 1;
+
       keyNode = keyNode->next;
     }
-    pthread_rwlock_unlock(&indexList->rwl);
   }
-  printf("bla22\n");
   return 0;
 }
 
 void kvs_wait(unsigned int delay_ms) {
   struct timespec delay = delay_to_timespec(delay_ms);
   nanosleep(&delay, NULL);
+}
+
+pid_t do_fork(){
+  hash_table_wrlock();
+  pid_t pid = fork();
+  hash_table_unlock();
+  return pid;
 }

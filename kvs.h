@@ -9,7 +9,6 @@
 typedef struct KeyNode {
     char *key;
     char *value;
-    pthread_rwlock_t rwl;
     struct KeyNode *next;
 } KeyNode;
 
@@ -20,12 +19,14 @@ typedef struct IndexList {
 
 typedef struct HashTable {
     IndexList *table[TABLE_SIZE];
-    pthread_mutex_t mutex;
+    pthread_rwlock_t rwl;
 } HashTable;
 
 int pthread_rwlock_rdlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t *toUnlock);
 
 int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t *toUnlock);
+
+int hash(const char *key);
 
 /// Creates a new event hash table.
 /// @return Newly created hash table, NULL on failure
