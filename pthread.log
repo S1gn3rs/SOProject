@@ -1,0 +1,128 @@
+==================
+WARNING: ThreadSanitizer: data race (pid=24627)
+  Write of size 8 at 0x724000000010 by thread T1 (mutexes: write M0):
+    #0 write_pair /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:132 (kvs+0xd357) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #1 kvs_write /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:75 (kvs+0x8935) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #2 thread_function /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:73 (kvs+0x6d4e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Previous read of size 8 at 0x724000000010 by thread T2:
+    #0 read_pair /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:168 (kvs+0xdcfb) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #1 kvs_read /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:113 (kvs+0x8da7) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #2 thread_function /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:87 (kvs+0x6e39) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Location is heap block of size 248 at 0x724000000000 allocated by main thread:
+    #0 malloc ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:665 (libtsan.so.2+0x54b3f) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 create_hash_table /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:24 (kvs+0xbee6) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #2 kvs_init /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:28 (kvs+0x818e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #3 main /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:232 (kvs+0x7906) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Mutex M0 (0x7240000000d0) created at:
+    #0 pthread_mutex_init ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1315 (libtsan.so.2+0x594cd) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 create_hash_table /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:26 (kvs+0xbf78) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #2 kvs_init /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:28 (kvs+0x818e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #3 main /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:232 (kvs+0x7906) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Thread T1 (tid=24629, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1022 (libtsan.so.2+0x5ac1a) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 main /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:258 (kvs+0x7e44) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Thread T2 (tid=24630, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1022 (libtsan.so.2+0x5ac1a) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 main /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:258 (kvs+0x7e44) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+SUMMARY: ThreadSanitizer: data race /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:132 in write_pair
+==================
+==================
+WARNING: ThreadSanitizer: data race (pid=24627)
+  Read of size 8 at 0x721400005000 by thread T1 (mutexes: read M0):
+    #0 write_pair /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:145 (kvs+0xd6ac) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #1 kvs_write /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:75 (kvs+0x8935) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #2 thread_function /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:73 (kvs+0x6d4e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Previous write of size 8 at 0x721400005000 by thread T2 (mutexes: read M0, write M1):
+    #0 aux_change_head /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:115 (kvs+0xcf6f) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #1 write_pair /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:158 (kvs+0xdaf6) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #2 kvs_write /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:75 (kvs+0x8935) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #3 thread_function /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:73 (kvs+0x6d4e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Location is heap block of size 80 at 0x721400005000 allocated by thread T2:
+    #0 malloc ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:665 (libtsan.so.2+0x54b3f) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 create_IndexList /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:44 (kvs+0xc16b) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #2 write_pair /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:132 (kvs+0xd2d5) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #3 kvs_write /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:75 (kvs+0x8935) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #4 thread_function /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:73 (kvs+0x6d4e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Mutex M0 (0x721000004008) created at:
+    #0 pthread_rwlock_init ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1458 (libtsan.so.2+0x5633d) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 create_IndexList /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:39 (kvs+0xc147) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #2 write_pair /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:132 (kvs+0xd2d5) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #3 kvs_write /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:75 (kvs+0x8935) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #4 thread_function /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:73 (kvs+0x6d4e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Mutex M1 (0x721400005010) created at:
+    #0 pthread_rwlock_init ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1458 (libtsan.so.2+0x5633d) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 create_IndexList /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:50 (kvs+0xc275) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #2 write_pair /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:132 (kvs+0xd2d5) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #3 kvs_write /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:75 (kvs+0x8935) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #4 thread_function /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:73 (kvs+0x6d4e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Thread T1 (tid=24629, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1022 (libtsan.so.2+0x5ac1a) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 main /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:258 (kvs+0x7e44) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Thread T2 (tid=24630, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1022 (libtsan.so.2+0x5ac1a) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 main /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:258 (kvs+0x7e44) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+SUMMARY: ThreadSanitizer: data race /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:145 in write_pair
+==================
+==================
+WARNING: ThreadSanitizer: data race (pid=24627)
+  Read of size 7 at 0x720400000810 by thread T1 (mutexes: read M0):
+    #0 strcmp ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors.inc:461 (libtsan.so.2+0x5c5bf) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 write_pair /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:145 (kvs+0xd6ec) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #2 kvs_write /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:75 (kvs+0x8935) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #3 thread_function /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:73 (kvs+0x6d4e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Previous write of size 8 at 0x720400000810 by thread T2 (mutexes: read M0, write M1):
+    #0 malloc ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:665 (libtsan.so.2+0x54b3f) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 __GI___strdup string/strdup.c:42 (libc.so.6+0xb434e) (BuildId: 6d64b17fbac799e68da7ebd9985ddf9b5cb375e6)
+    #2 aux_change_head /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:115 (kvs+0xcf38) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #3 write_pair /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:158 (kvs+0xdaf6) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #4 kvs_write /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:75 (kvs+0x8935) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #5 thread_function /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:73 (kvs+0x6d4e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Location is heap block of size 7 at 0x720400000810 allocated by thread T2:
+    #0 malloc ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:665 (libtsan.so.2+0x54b3f) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 __GI___strdup string/strdup.c:42 (libc.so.6+0xb434e) (BuildId: 6d64b17fbac799e68da7ebd9985ddf9b5cb375e6)
+    #2 aux_change_head /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:115 (kvs+0xcf38) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #3 write_pair /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:158 (kvs+0xdaf6) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #4 kvs_write /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:75 (kvs+0x8935) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #5 thread_function /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:73 (kvs+0x6d4e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Mutex M0 (0x721000004008) created at:
+    #0 pthread_rwlock_init ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1458 (libtsan.so.2+0x5633d) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 create_IndexList /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:39 (kvs+0xc147) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #2 write_pair /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:132 (kvs+0xd2d5) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #3 kvs_write /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:75 (kvs+0x8935) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #4 thread_function /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:73 (kvs+0x6d4e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Mutex M1 (0x721400005010) created at:
+    #0 pthread_rwlock_init ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1458 (libtsan.so.2+0x5633d) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 create_IndexList /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:50 (kvs+0xc275) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #2 write_pair /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:132 (kvs+0xd2d5) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #3 kvs_write /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/operations.c:75 (kvs+0x8935) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+    #4 thread_function /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:73 (kvs+0x6d4e) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Thread T1 (tid=24629, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1022 (libtsan.so.2+0x5ac1a) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 main /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:258 (kvs+0x7e44) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+  Thread T2 (tid=24630, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1022 (libtsan.so.2+0x5ac1a) (BuildId: 38097064631f7912bd33117a9c83d08b42e15571)
+    #1 main /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/main.c:258 (kvs+0x7e44) (BuildId: 7b78be64f9c6e8afe5344ee0a5e09d034a464ba7)
+
+SUMMARY: ThreadSanitizer: data race /home/s1gn3rs/Documents/2YearLEIC/SO24-25/SOProject1/kvs.c:145 in write_pair
+==================
+ThreadSanitizer: reported 3 warnings
+ThreadSanitizer: reported 3 warnings

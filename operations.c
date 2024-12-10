@@ -173,15 +173,23 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
 
 int kvs_show(int fd) {
   for (int i = 0; i < TABLE_SIZE; i++) {
+    if (pthread_mutex_lock(&kvs_table->mutex) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
+      fprintf(stderr, "Error locking table's mutex.\n");
+      return 1;
+    }
     IndexList *indexList = kvs_table->table[i];
-    KeyNode *keyNode;
+    pthread_mutex_unlock(&kvs_table->mutex);
+    KeyNode *keyNode, *tempNode;
 
     if (indexList == NULL) continue;
     if (pthread_rwlock_rdlock_error_check(&indexList->rwl, NULL)) return 1;
 
+
     keyNode = indexList->head;
 
+    if(keyNode == NULL || pthread_rwlock_rdlock_error_check(&keyNode->rwl, &indexList->rwl)) return 1;
     if (keyNode != NULL && strcmp(keyNode->key, "-") == 0) keyNode = keyNode->next;
+    pthread_rwlock_unlock(&keyNode->rwl);
 
     char buffer[MAX_WRITE_SIZE];
     while (keyNode != NULL) {
@@ -195,8 +203,9 @@ int kvs_show(int fd) {
         perror("Error writing\n");
         return 1;
       }
-      pthread_rwlock_unlock(&keyNode->rwl);
+      tempNode = keyNode;
       keyNode = keyNode->next; // Move to the next node
+      pthread_rwlock_unlock(&tempNode->rwl);
     }
     pthread_rwlock_unlock(&indexList->rwl);
   }
@@ -204,7 +213,7 @@ int kvs_show(int fd) {
 }
 
 int kvs_backup(int fd) {
-
+  printf("alb11\n");
   char buffer[MAX_WRITE_SIZE];
 
   for (int i = 0; i < TABLE_SIZE; i++) {
@@ -216,28 +225,38 @@ int kvs_backup(int fd) {
         //fprintf(stderr, "Error locking list rwl,\n"); not signal safe
         return 1;
     }
+
     keyNode = indexList->head;
-    
+
     if (keyNode != NULL && strcmp(keyNode->key, "-") == 0) keyNode = keyNode->next;
 
     while (keyNode != NULL) {
+      printf("while\n");
+      printf("%s\n", keyNode->key);
       if (pthread_rwlock_rdlock(&keyNode->rwl) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
         //fprintf(stderr, "Error locking list rwl,\n"); not signal safe
         pthread_rwlock_unlock(&indexList->rwl);
         return 1;
       }
+      printf("BUG HERE\n");
       char *key = keyNode->key;
       char *value = keyNode->value;
       char *buf_ptr = buffer;
 
       *buf_ptr++ = '(';
 
-      while(*key && buf_ptr < buffer + MAX_WRITE_SIZE - 4) *buf_ptr++ = *key++;
+      while(*key && buf_ptr < buffer + MAX_WRITE_SIZE - 4){
+        *buf_ptr++ = *key++;
+        printf("while2\n");
+      } 
 
       *buf_ptr++ = ',';
       *buf_ptr++ = ' ';
 
-      while(*value && buf_ptr < buffer + MAX_WRITE_SIZE - 2)*buf_ptr++ = *value++;
+      while(*value && buf_ptr < buffer + MAX_WRITE_SIZE - 2){
+        *buf_ptr++ = *value++;
+        printf("while3\n");
+      }
 
       *buf_ptr++ = ')';
       *buf_ptr++ = '\n';
@@ -254,6 +273,7 @@ int kvs_backup(int fd) {
     }
     pthread_rwlock_unlock(&indexList->rwl);
   }
+  printf("bla22\n");
   return 0;
 }
 

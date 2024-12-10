@@ -17,15 +17,15 @@ pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
 typedef struct ThreadArgs {
+    char *dir_name;
     size_t dir_length;
     struct dirent *entry;
 }ThreadArgs;
 
-size_t active_threads = 0;
+int active_threads = 0;
 int max_backups = 1;
+int active_backups = 0;
 DIR *directory;
-
-
 
 void *thread_function(void *args) {
   char keys[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
@@ -38,32 +38,27 @@ void *thread_function(void *args) {
   char out_path[MAX_JOB_FILE_NAME_SIZE];
   char bck_path[MAX_JOB_FILE_NAME_SIZE + 3]; // SHOULD BE MORE BC OF NUMBERS??????????????????????????????????????????????????????????????????????????????
 
-  size_t size_path = threadArgs->dir_length + strlen(threadArgs->entry->d_name) + 2;
+  char *entry_name = threadArgs->entry->d_name;
+  size_t length_entry_name = strlen(entry_name);
+  size_t size_path = threadArgs->dir_length + length_entry_name + 2;
 
-  snprintf(in_path, size_path, "%s/%s", argv[1], threadArgs->entry->d_name);
-  snprintf(out_path, size_path, "%s/%.*s.out", argv[1], (int)length_entry_name - 4, threadArgs->entry->d_name); // este type cast devia de ficar aqui ou nao??????
+  snprintf(in_path, size_path, "%s/%s", threadArgs->dir_name, entry_name);
+  snprintf(out_path, size_path, "%s/%.*s.out", threadArgs->dir_name, (int)length_entry_name - 4, entry_name); // este type cast devia de ficar aqui ou nao??????
 
   int in_fd = open(in_path, O_RDONLY);
   if(in_fd == -1){
     perror("File could not be open.\n");
-    closedir(directory);
-    return 1;
+    return NULL;
   }
 
   int out_fd = open(out_path, O_CREAT | O_TRUNC | O_WRONLY , S_IRUSR | S_IWUSR);
   if(in_fd == -1){
     perror("File could not be open.\n");
-    closedir(directory);
-    return 1;
+    return NULL;
   }
 
   //max_backups definido em cima --------------------------------------------------------------
   int backups_made = 0;
-  int active_backups = 0;
-
-  ThreadArgs *thread_args = (ThreadArgs *)args;
-
-
   int reading_commands = 1;
   while(reading_commands){
 
@@ -120,19 +115,22 @@ void *thread_function(void *args) {
         if (delay > 0) {
           if (write(out_fd, "Waiting...\n", 11) == -1) { // 11 is the length of "Waiting...\n" is ok to hardcode this?
             perror("Error writing\n");
-            return 1;
+            return NULL;
           }
-          kvs_wait(delay);
+          kvs_wait(delay);//////////////////////////////////////////////////////////////////////////
         }
         break;
 
       case CMD_BACKUP:
-        if (backups_made >= max_backups) {
+        pthread_mutex_lock(&mutex);
+        if (active_backups >= max_backups) {
             int status;
             wait(&status);// É SUPOSTO LIDAR COM ERRO CASO BACKUP FALHE
         }
+        else active_backups++;
         backups_made++;
-          
+        pthread_mutex_unlock(&mutex);
+
         pid_t pid = fork();
         if(pid == -1){
                 fprintf(stderr, "Failed to create child process\n");
@@ -140,20 +138,21 @@ void *thread_function(void *args) {
         }
         if (pid == 0){ ///////////////////////////////////////////////////////////preciso de pareteses?
           // Vai se lixar tudo com treads
-          snprintf(bck_path, size_path + 3, "%s/%.*s-%d.bck", argv[1], (int)length_entry_name - 4, entry->d_name, backups_made);
+          snprintf(bck_path, size_path + 3, "%s/%.*s-%d.bck", threadArgs->dir_name, (int)length_entry_name - 4, entry_name, backups_made);
           int bck_fd = open(bck_path, O_CREAT | O_TRUNC | O_WRONLY , S_IRUSR | S_IWUSR);
-            
+
           if(bck_fd == -1){
             perror("File could not be open.\n");
-            closedir(directory);
-            return 1;
+            return NULL;
           }
-            
+
           if (kvs_backup(bck_fd)) {
             fprintf(stderr, "Failed to perform backup.\n");
           }
           //sleep(5);
           kvs_terminate();
+          close(in_fd);
+          close(out_fd);
           closedir(directory);
           exit(0);
         }
@@ -164,7 +163,7 @@ void *thread_function(void *args) {
         break;
 
       case CMD_HELP:
-        printf( 
+        printf(
             "Available commands:\n"
             "  WRITE [(key,value)(key2,value2),...]\n"
             "  READ [key,key2,...]\n"
@@ -176,7 +175,7 @@ void *thread_function(void *args) {
         );
 
         break;
-          
+
       case CMD_EMPTY:
         break;
 
@@ -186,11 +185,14 @@ void *thread_function(void *args) {
   }
   close(in_fd);
   close(out_fd);
+  pthread_mutex_lock(&mutex);
   pthread_cond_signal(&cond);
   active_threads--;
+  pthread_mutex_unlock(&mutex);
   free(args);
-  while (active_backups-- > 0) wait(NULL);
+  return NULL;
 }
+
 
 int main(int argc, char *argv[]) {
 
@@ -208,7 +210,6 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  int max_backups = 1;
   if (argc >= 3){
     if( (max_backups = atoi(argv[2])) < 1){
       perror("Number of concurrent backups not valid.\n");
@@ -234,7 +235,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  pthread_t threads[max_threads];
+  pthread_t threads[1024];
   int thread_count = 0;
 
   while ((entry = readdir(directory)) != NULL) {
@@ -245,6 +246,7 @@ int main(int argc, char *argv[]) {
     ThreadArgs *args = malloc(sizeof(ThreadArgs)); // DESCONTA SE NÃO TIVER TYPE CAST?????????????????
     args->dir_length = length_dir_name;
     args->entry = entry;
+    args->dir_name = argv[1];
 
     pthread_mutex_lock(&mutex);
     while (active_threads >= max_threads){
@@ -255,10 +257,13 @@ int main(int argc, char *argv[]) {
 
     pthread_create(&threads[thread_count++], NULL, thread_function, (void *)args);
   }
-  closedir(directory);
   for (int i = 0; i < thread_count; i++) {
     pthread_join(threads[i], NULL);
   }
+  closedir(directory);
+
   kvs_terminate();
+  while (active_backups-- > 0) wait(NULL);
+
   return 0;
 }

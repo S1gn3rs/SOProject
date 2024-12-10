@@ -34,7 +34,7 @@ HashTable* create_hash_table() {
 IndexList* create_IndexList(const char* key, const char*value){
     IndexList *indexList = malloc(sizeof(IndexList));
     KeyNode *keyNode;
-    
+
     if (!indexList) return NULL;
     if (pthread_rwlock_init(&indexList->rwl, NULL) != 0){
         free(indexList);
@@ -93,7 +93,7 @@ int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t
 
 int aux_change_head(KeyNode *baseKeyNode, const char *key, const char *value){
     KeyNode *newKeyNode = baseKeyNode->next;
-    
+
     if (strcmp(baseKeyNode->value, key) == 0){
         free(baseKeyNode->value);
         baseKeyNode->value = strdup(value);
@@ -121,13 +121,13 @@ int aux_change_head(KeyNode *baseKeyNode, const char *key, const char *value){
 
 int write_pair(HashTable *ht, const char *key, const char *value) {
     int index = hash(key);
-    IndexList *indexList = ht->table[index];
     KeyNode *keyNode;
     //Problema se estiver mais que um a tentar criar o segundo vai perder ponteiro correto !!!!!!!!!!!!
     if (pthread_mutex_lock(&ht->mutex) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
         fprintf(stderr, "Error locking table's mutex.\n");
         return 1;
     }
+    IndexList *indexList = ht->table[index];
     if (indexList == NULL) {
         ht->table[index] = create_IndexList(key, value);
         if (ht->table[index] == NULL) return 1;
@@ -138,7 +138,18 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
     pthread_mutex_unlock(&ht->mutex);
 
     if (pthread_rwlock_rdlock_error_check(&indexList->rwl, NULL)) return 1;
+
+    if (pthread_rwlock_wrlock_error_check(&indexList->head->rwl, &indexList->rwl)) return 1;
     keyNode = indexList->head;
+    if (strcmp(keyNode->key, key) == 0){
+        free(keyNode->value);
+        keyNode->value = strdup(value);
+        pthread_rwlock_unlock(&indexList->head->rwl);
+        pthread_rwlock_unlock(&indexList->rwl);
+        return 0;
+    }
+    keyNode = keyNode->next;
+    pthread_rwlock_unlock(&indexList->head->rwl);
     // Search for the key node
     while (keyNode != NULL) {
 
@@ -153,7 +164,7 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
         }
         keyNode = keyNode->next; // Move to the next node
     }
-    
+
     if (pthread_rwlock_wrlock_error_check(&indexList->head->rwl, NULL)) return 1;
     if (aux_change_head(indexList->head, key, value)) return 1;
     pthread_rwlock_unlock(&indexList->head->rwl);
@@ -165,9 +176,14 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
 
 char* read_pair(HashTable *ht, const char *key) {
     int index = hash(key);
-    IndexList *indexList = ht->table[index];
     KeyNode *keyNode, *nextKeyNode;
     char* value;
+    if (pthread_mutex_lock(&ht->mutex) != 0) { // COLOCAR EXPLICAÇÃO -----------------------------
+        fprintf(stderr, "Error locking table's mutex.\n");
+        return NULL;
+    }
+    IndexList *indexList = ht->table[index];
+    pthread_mutex_unlock(&ht->mutex);
 
     if (indexList == NULL) return NULL;
 
@@ -189,7 +205,6 @@ char* read_pair(HashTable *ht, const char *key) {
     while (keyNode != NULL) {
         if (strcmp(keyNode->key, key) == 0) {
             if (pthread_rwlock_rdlock_error_check(&keyNode->rwl, &indexList->rwl)) return NULL;
-            
             value = strdup(keyNode->value);
             pthread_rwlock_unlock(&keyNode->rwl);
             pthread_rwlock_unlock(&indexList->rwl);
