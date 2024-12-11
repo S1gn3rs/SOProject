@@ -19,6 +19,7 @@ static struct timespec delay_to_timespec(unsigned int delay_ms) {
   return (struct timespec){delay_ms / 1000, (delay_ms % 1000) * 1000000};
 }
 
+
 int kvs_init() {
   if (kvs_table != NULL) {
     fprintf(stderr, "KVS state has already been initialized\n");
@@ -26,8 +27,9 @@ int kvs_init() {
   }
 
   kvs_table = create_hash_table();
-  return kvs_table == NULL;
+  return kvs_table == NULL;index
 }
+
 
 int kvs_terminate() {
   if (kvs_table == NULL) {
@@ -39,26 +41,52 @@ int kvs_terminate() {
 }
 
 
-void hash_table_wrlock(){
-  pthread_rwlock_wrlock_error_check(&kvs_table->rwl, NULL);
+/// Activate kvs hash table's lock to write and checks if it gets any error, if
+/// an error ocurred reports it and won't execute the lock.
+/// @return 0 if executes successfully and 1 if it gets an error.
+int hash_table_wrlock(){
+  return pthread_rwlock_wrlock_error_check(&kvs_table->rwl, NULL);
 }
 
-void hash_table_rdlock(){
-  pthread_rwlock_rdlock_error_check(&kvs_table->rwl, NULL);
+
+/// Activate kvs hash table's lock to read and checks if it gets any error, if
+/// an error ocurred reports it and won't execute the lock.
+/// @return 0 if executes successfully and 1 if it gets an error.
+int hash_table_rdlock(){
+  return pthread_rwlock_rdlock_error_check(&kvs_table->rwl, NULL);
 }
 
-void hash_table_unlock(){
-  pthread_rwlock_unlock(&kvs_table->rwl);
+
+/// Desactivate kvs hash table's lock (unlock) and checks if it gets any error,
+/// if an error ocurred reports it and won't execute the unlock.
+/// @return 0 if executes successfully and 1 if it gets an error.
+int hash_table_unlock(){
+  return pthread_rwlock_unlock(&kvs_table->rwl);
 }
 
-void hash_table_list_wrlock(size_t index){
-  pthread_rwlock_wrlock_error_check(&kvs_table->table[index]->rwl, &kvs_table->rwl);
+
+/// Activate lock to write of hash table's index list and checks if it gets any
+/// error, if an error ocurred reports it and won't execute the lock.
+/// @param index To get the corresponding list of that index in the hash table.
+/// @return 0 if executes successfully and 1 if it gets an error.
+int hash_table_list_wrlock(size_t index){
+  return pthread_rwlock_wrlock_error_check(&kvs_table->table[index]->rwl, &kvs_table->rwl);
 }
 
-void hash_table_list_unlock(size_t index){
-  pthread_rwlock_unlock(&kvs_table->table[index]->rwl);
+
+/// Desactivate lock (unlock) of hash table's index list and checks if it gets
+/// any error, if an error ocurred reports it and won't execute the unlock.
+/// @param index To get the corresponding list of that index in the hash table.
+/// @return 0 if executes successfully and 1 if it gets an error.
+int hash_table_list_unlock(size_t index){
+  return pthread_rwlock_unlock(&kvs_table->table[index]->rwl);
 }
 
+
+/// A variation of insertion sort that sorts an index list based on it's keys.
+/// @param indexs List of indexs to be sorted.
+/// @param num_pairs Amount of indexs that need to be sorted by their key.
+/// @param keys Correspondent key for each index.
 void insertion_sort(size_t *indexs, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
   for (size_t i = 1; i < num_pairs; i++) {
     size_t current = indexs[i];
