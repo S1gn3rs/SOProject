@@ -6,26 +6,40 @@
 #include <stddef.h>
 #include <pthread.h>
 
+/// Node of the linked list.
 typedef struct KeyNode {
-    char *key;
-    char *value;
-    struct KeyNode *next;
+    char *key; // Key of the pair.
+    char *value; // Value of the pair.
+    struct KeyNode *next; // Pointer to the next node.
 } KeyNode;
 
+/// List of key value pairs.
 typedef struct IndexList {
-    KeyNode *head;
-    pthread_rwlock_t rwl;
+    KeyNode *head; // Pointer to the first node.
+    pthread_rwlock_t rwl; // Read-write lock.
 } IndexList;
 
+/// Hash table structure.
 typedef struct HashTable {
-    IndexList *table[TABLE_SIZE];
-    pthread_rwlock_t rwl;
+    IndexList *table[TABLE_SIZE]; // Array of linked lists.
+    pthread_rwlock_t rwl; // Read-write lock.
 } HashTable;
 
+/// Tries to lock a rwlock in read mode and checks for errors.
+/// @param rwlock the rwlock to lock.
+/// @param toUnlock in case of error, unlock this rwlock.
+/// @return 0 if the lock was successful, 1 otherwise.
 int pthread_rwlock_rdlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t *toUnlock);
 
+/// Tries to lock a rwlock in write mode and checks for errors.
+/// @param rwlock the rwlock to lock.
+/// @param toUnlock in case of error, unlock this rwlock.
+/// @return 0 if the lock was successful, 1 otherwise.
 int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t *toUnlock);
 
+/// Hash function to calculate the index of the key.
+/// @param key
+/// @return Index of the key.
 int hash(const char *key);
 
 /// Creates a new event hash table.

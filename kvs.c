@@ -20,6 +20,8 @@ int hash(const char *key) {
     return -1; // Invalid index for non-alphabetic or number strings
 }
 
+/// Function to create a new IndexList.
+/// @return a pointer to the new IndexList or NULL on failure.
 IndexList* create_IndexList(){
     IndexList *indexList = malloc(sizeof(IndexList));
 
