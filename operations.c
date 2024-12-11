@@ -9,6 +9,7 @@
 #include "kvs.h"
 #include "constants.h"
 
+/// Hash table to store the key value pairs.
 static struct HashTable* kvs_table = NULL;
 
 
@@ -104,52 +105,67 @@ void insertion_sort(size_t *indexs, size_t num_pairs, char keys[][MAX_STRING_SIZ
 int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_STRING_SIZE]) {
   int isLocked[26] = {0}; // To indicate witch indices have been locked
 
+  // Check if the KVS state has been initialized
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
     return 1;
   }
 
+  // Allocate memory for the indexs
   size_t *indexs = malloc(num_pairs * sizeof(size_t));
+  // Check if the memory was allocated successfully
   if (indexs == NULL) {
     fprintf(stderr, "Failed to allocate memory for index\n");
     return 1;
   }
 
+  // Fill the indexs with the indexs of the pairs
   for (size_t i = 0; i < num_pairs; i++) {
     indexs[i] = i;
   }
 
+  // Lock the hash table for reading
   hash_table_rdlock();
 
+  // Sort the indexs based on the keys
   insertion_sort(indexs, num_pairs, keys);
+
+  // Iterate over the pairs
   for (size_t i = 0; i < num_pairs; i++) {
     size_t indexNodes = indexs[i];
     size_t indexList = (size_t) hash(keys[indexNodes]);
     if (isLocked[indexList] == 0){
       isLocked[indexList] = 1;
+      // Lock the index list for writing
       hash_table_list_wrlock(indexList);
     }
+    // Try to write the key value pair to the hash table
     if (write_pair(kvs_table, keys[indexNodes], values[indexNodes]) != 0) {
 
       fprintf(stderr, "Failed to write keypair (%s,%s)\n", keys[indexNodes], values[indexNodes]);
     }
   }
 
+  // Unlock the hash table's index list that have been locked
   for (size_t ind = 0; ind < 26; ind++)
     if (isLocked[ind]) hash_table_list_unlock(ind);
 
+  // Unlock the hash table
   hash_table_unlock();
+  // Free the memory allocated for the indexs
   free(indexs);
   return 0;
 }
 
 
 int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
+  // Check if the KVS state has been initialized
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
     return 1;
   }
 
+  // Buffer to store the read content
   char buffer[MAX_WRITE_SIZE];
   int length;
 
@@ -200,12 +216,13 @@ int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
 }
 
 int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
+  // Check if the KVS state has been initialized
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
     return 1;
   }
   int aux = 0;
-
+  
   char buffer[MAX_WRITE_SIZE];
   for (size_t i = 0; i < num_pairs; i++) {
     if (delete_pair(kvs_table, keys[i]) != 0) {
@@ -234,27 +251,36 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
 }
 
 int kvs_show(int fd) {
+  // Try to lock the hash table for writing
   if (pthread_rwlock_wrlock_error_check(&kvs_table->rwl, NULL) != 0) return 1;
 
+  // Iterate over the hash table
   for (int i = 0; i < TABLE_SIZE; i++) {
+    // Get the index list
     IndexList *indexList = kvs_table->table[i];
     KeyNode *keyNode; //*tempNode;
 
+    // If the index list is NULL, continue to the next index
     if (indexList == NULL) continue;
     // if (pthread_rwlock_rdlock_error_check(&indexList->rwl, NULL)) return 1;
 
-
+    // Get the first key node
     keyNode = indexList->head;
 
     // if(keyNode == NULL || pthread_rwlock_rdlock_error_check(&keyNode->rwl, &indexList->rwl)) return 1;
-    if (keyNode != NULL && strcmp(keyNode->key, "-") == 0) keyNode = keyNode->next;
+    if (keyNode != NULL && strcmp(keyNode->key, "-") == 0) keyNode = keyNode->next;//////////////////////////////////////////////
     // pthread_rwlock_unlock(&keyNode->rwl);
 
+    // Buffer to store the show content
     char buffer[MAX_WRITE_SIZE];
+    // Iterate over the key nodes
     while (keyNode != NULL) {
+
+      // Get the length of the key value pair
       int length = snprintf(buffer, MAX_WRITE_SIZE, "(%s, %s)\n", keyNode->key, keyNode->value);
 
-      if (write(fd, buffer, (size_t)length) == -1) {
+      //Try to write the key value pair to the file descriptor
+      if (write(fd, buffer, (size_t)length) == -1) { /////////////////////////atomico?
         pthread_rwlock_unlock(&kvs_table->rwl);
         perror("Error writing\n");
         return 1;
@@ -262,28 +288,35 @@ int kvs_show(int fd) {
       keyNode = keyNode->next; // Move to the next node
     }
   }
+  // Unlock the hash table
   pthread_rwlock_unlock(&kvs_table->rwl);
   return 0;
 }
 
 int kvs_backup(int fd) {
+  // Buffer to store the backup content
   char buffer[MAX_WRITE_SIZE];
 
+  // Iterate over the hash table
   for (int i = 0; i < TABLE_SIZE; i++) {
+    // Get the index list
     IndexList *indexList = kvs_table->table[i];
     KeyNode *keyNode;
 
+    // If the index list is NULL, continue to the next index
     if (indexList == NULL) continue;
 
     keyNode = indexList->head;
 
-    if (keyNode != NULL && strcmp(keyNode->key, "-") == 0) keyNode = keyNode->next;
+    if (keyNode != NULL && strcmp(keyNode->key, "-") == 0) keyNode = keyNode->next; /////////////////////////////////////////////////////////////////////////////////
 
+    // Iterate over the key nodes
     while (keyNode != NULL) {
       char *key = keyNode->key;
       char *value = keyNode->value;
       char *buf_ptr = buffer;
 
+      // Write the key value pair to the buffer
       *buf_ptr++ = '(';
 
       while(*key && buf_ptr < buffer + MAX_WRITE_SIZE - 4) *buf_ptr++ = *key++;
@@ -296,10 +329,13 @@ int kvs_backup(int fd) {
       *buf_ptr++ = ')';
       *buf_ptr++ = '\n';
 
+      // Calculate the length of the buffer
       size_t length = (size_t)(buf_ptr - buffer);
 
-      if (write(fd, buffer, (size_t)length) == -1) return 1;
+      // Write the buffer to the file descriptor
+      if (write(fd, buffer, (size_t)length) == -1) return 1; ////////////////////////////////////////////backup not atomic???
 
+      // Move to the next node
       keyNode = keyNode->next;
     }
   }
@@ -311,6 +347,8 @@ void kvs_wait(unsigned int delay_ms) {
   nanosleep(&delay, NULL);
 }
 
+/// Do a safe fork preventing the child process to have any locks on the hashTable
+/// @return value of the child's pid to parent process and 0 to child process
 pid_t do_fork(){
   hash_table_wrlock();
   pid_t pid = fork();
