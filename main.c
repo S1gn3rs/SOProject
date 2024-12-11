@@ -66,7 +66,7 @@ void *thread_function(void *args) {
     // Path for the output file.
     char out_path[MAX_JOB_FILE_NAME_SIZE];
     // Path for the backup file.
-    char bck_path[MAX_JOB_FILE_NAME_SIZE + 3]; // SHOULD BE MORE BC OF NUMBERS??????????????????????????????????????????????????????????????????????????????
+    char bck_path[MAX_JOB_FILE_NAME_SIZE];
 
     // Get the name of the current file.
     char *entry_name = entry->d_name;
@@ -164,8 +164,8 @@ void *thread_function(void *args) {
           pthread_mutex_lock(&mutex);
           // Check if the number of active backups is less than the maximum number of backups.
           if (active_backups >= max_backups) {
-              int status;
-              wait(&status);// wait for a backup to finish
+            int status;
+            wait(&status);// wait for a backup to finish
           }
           // Increment the number of active backups.
           else active_backups++;
@@ -173,12 +173,12 @@ void *thread_function(void *args) {
           backups_made++;
           // Unlock the mutex after checking if we can make a backup.
           pthread_mutex_unlock(&mutex);
-          // Create a child process to make the backup.
+          // Create safely a child process to make the backup.
           pid_t pid = do_fork();
           // Check if the child process was created successfully.
           if(pid == -1){
-                  fprintf(stderr, "Failed to create child process\n");
-                  exit(1);
+            fprintf(stderr, "Failed to create child process\n");
+            exit(1);
           }
           // Check if we are in the child process.
           if (pid == 0){ ///////////////////////////////////////////////////////////preciso de pareteses?
@@ -195,7 +195,6 @@ void *thread_function(void *args) {
             if (kvs_backup(bck_fd)) {
               fprintf(stderr, "Failed to perform backup.\n");
             }
-            //sleep(5);
             kvs_terminate();
             close(in_fd);
             close(out_fd);
@@ -296,6 +295,11 @@ int main(int argc, char *argv[]) {
 
   // Struct to pass arguments to the thread function.
   ThreadArgs *args = malloc(sizeof(ThreadArgs)); // VERIFICAR SE PRECISAMOS DE LEVANTAR ERRO
+  if (!args){
+    closedir(directory);
+    kvs_terminate();
+    return 1;
+  }
   args->dir_length = length_dir_name;
   args->dir_name = argv[1];
 

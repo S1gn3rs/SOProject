@@ -4,12 +4,22 @@
 
 #include <stdlib.h>
 #include <ctype.h>
+#include <unistd.h>
 
 
-// Hash function based on key initial.
-// @param key Lowercase alphabetical string.
-// @return hash.
-// NOTE: This is not an ideal hash function, but is useful for test purposes of the project
+int strdup_error_check(char *newBuffer, char *bufferToCopy){
+    newBuffer = strdup(bufferToCopy);
+    if (newBuffer == NULL) {
+        fprintf(stderr, "Error trying to do duplicate string.\n");
+        return 1;
+    }
+    return 0;
+}
+
+/// Hash function based on key initial.
+/// @param key Lowercase alphabetical string.
+/// @return hash.
+/// NOTE: This is not an ideal hash function, but is useful for test purposes of the project
 int hash(const char *key) {
     int firstLetter = tolower(key[0]);
     if (firstLetter >= 'a' && firstLetter <= 'z') {
@@ -69,15 +79,7 @@ int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t
 int write_pair(HashTable *ht, const char *key, const char *value) {
     int index = hash(key);
     KeyNode *keyNode, *newKeyNode;
-    //Problema se estiver mais que um a tentar criar o segundo vai perder ponteiro correto !!!!!!!!!!!!//////////////////777
-    //if (pthread_rwlock_wrlock_error_check(&ht->rwl, NULL) != 0) return 1;
     IndexList *indexList = ht->table[index];
-
-    //pthread_rwlock_unlock(&ht->rwl);
-
-    //if (pthread_rwlock_rdlock_error_check(&ht->rwl, NULL) != 0) return 1;
-
-    //if (pthread_rwlock_wrlock_error_check(&indexList->rwl, &ht->rwl)) return 1;
 
     keyNode = indexList->head;
     // Search for the key node
@@ -86,21 +88,18 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
         if (strcmp(keyNode->key, key) == 0) {
             free(keyNode->value);
             keyNode->value = strdup(value);
-            //pthread_rwlock_unlock(&indexList->rwl);
-            //pthread_rwlock_unlock(&ht->rwl);
             return 0;
         }
         keyNode = keyNode->next; // Move to the next node
     }
 
     newKeyNode = malloc(sizeof(KeyNode));
+    if (!newKeyNode) return 1;
     newKeyNode->key = strdup(key);
     newKeyNode->value = strdup(value);
-    newKeyNode->next = (indexList->head != NULL)? indexList->head->next : NULL;
+    newKeyNode->next = (indexList->head != NULL)? indexList->head : NULL;
     indexList->head = newKeyNode;
 
-    //pthread_rwlock_unlock(&indexList->rwl);
-    //pthread_rwlock_unlock(&ht->rwl);
     return 0;
 }
 
@@ -109,25 +108,16 @@ char* read_pair(HashTable *ht, const char *key) {
     int index = hash(key);
     KeyNode *keyNode;
     char* value;
-    if (pthread_rwlock_rdlock_error_check(&ht->rwl, NULL) != 0) return NULL;
-
     IndexList *indexList = ht->table[index];
-
-    if (pthread_rwlock_rdlock_error_check(&indexList->rwl, &ht->rwl)) return NULL;
     keyNode = indexList->head;
 
     while (keyNode != NULL) {
         if (strcmp(keyNode->key, key) == 0) {
             value = strdup(keyNode->value);
-            pthread_rwlock_unlock(&indexList->rwl);
-            pthread_rwlock_unlock(&ht->rwl);
             return value; // Return copy of the value if found
         }
         keyNode = keyNode->next; // Move to the next node
     }
-
-    pthread_rwlock_unlock(&indexList->rwl);
-    pthread_rwlock_unlock(&ht->rwl);
     return NULL; // Key not found
 }
 
@@ -136,9 +126,7 @@ int delete_pair(HashTable *ht, const char *key) {
     int index = hash(key);
     IndexList *indexList;
     KeyNode *keyNode, *prevNode = NULL;
-    if (pthread_rwlock_rdlock_error_check(&ht->rwl, NULL)) return 1;
     indexList = ht->table[index];
-    if (pthread_rwlock_wrlock_error_check(&indexList->rwl, &ht->rwl)) return 1;
     keyNode = indexList->head;
 
     // Search for the key node
@@ -147,7 +135,7 @@ int delete_pair(HashTable *ht, const char *key) {
             // Key found; delete this node
             if (prevNode == NULL) {
                 // Node to delete is the first node in the list
-                if(keyNode->next != NULL) indexList->head = keyNode->next; // Update the table to point to the next node
+                indexList->head = keyNode->next; // Update the table to point to the next node
             } else {
                 // Node to delete is not the first; bypass it
                 prevNode->next = keyNode->next; // Link the previous node to the next node
@@ -155,23 +143,13 @@ int delete_pair(HashTable *ht, const char *key) {
             // Free the memory allocated for the key and value
             free(keyNode->key);
             free(keyNode->value);
+            free(keyNode); // Free the key node itself
 
-            if (keyNode != indexList->head){
-                free(keyNode); // Free the key node itself
-            }
-            else{
-                keyNode->key = strdup("-");
-                keyNode->value = strdup("-");
-            }
-            pthread_rwlock_unlock(&indexList->rwl);
-            pthread_rwlock_unlock(&ht->rwl);
             return 0; // Exit the function
         }
         prevNode = keyNode; // Move prevNode to current node
         keyNode = keyNode->next; // Move to the next node
     }
-    pthread_rwlock_unlock(&indexList->rwl);
-    pthread_rwlock_unlock(&ht->rwl);
     return 1;
 }
 
@@ -195,31 +173,18 @@ void free_table(HashTable *ht) {
     free(ht);
 }
 
-// void free_table(HashTable *ht){
-//     pthread_t threads[TABLE_SIZE];
-//     for (int i = 0; i < TABLE_SIZE; i++){
-//         if (pthread_create(&threads[i], NULL, thread_clean_list, (void *) ht->table[i]) != 0){
-//             fprintf()
-//         }
-//     }
-//     for (int i = 0; i < TABLE_SIZE; i++){
-//         pthread_join(threads[i], NULL);
-//     }
-// }
+int write_error_check(int out_fd, char *buffer) {
+  ssize_t total_written = 0;
+  size_t done = 0, buff_len = strlen(buffer);
 
+  while ((total_written = write(out_fd, buffer+done, buff_len)) > 0) {
+    done += (size_t)total_written;
+    buff_len = buff_len - (size_t)total_written;
+  }
 
-// void *thread_clean_list(void *args){
-//     IndexList *indexList = (IndexList*) args;
-//     if (indexList == NULL) return NULL;
-//         KeyNode *keyNode = indexList->head;
-//         while (keyNode != NULL) {
-//             KeyNode *temp = keyNode;
-//             keyNode = keyNode->next;
-//             free(temp->key);
-//             free(temp->value);
-//             free(temp);
-//         }
-//     pthread_rwlock_destroy(&indexList->rwl);
-//     free(indexList);
-//     return NULL;
-// }
+  if (total_written == -1) {
+      fprintf(stderr, "Failed to write to .out file\n");////////////////////////////////////fprintf not signal
+      return 1;
+  }
+  return 0;
+}

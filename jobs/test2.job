@@ -1,7 +1,8 @@
-#SHOW
+SHOW
 WRITE [(cbhave2,valor-exemplo2)(umaChave,umValor)]
 WRITE [(c1,v1)(chave2,valor-exemplo)]
+DELETE [umaChave]
+DELETE [umaChave]
 BACKUP
 BACKUP
-BACKUP
-BACKUP
+
