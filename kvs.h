@@ -28,13 +28,13 @@ typedef struct HashTable {
 /// Tries to lock a rwlock in read mode and checks for errors.
 /// @param rwlock the rwlock to lock.
 /// @param toUnlock in case of error, unlock this rwlock.
-/// @return 0 if the lock was successful, 1 otherwise.
+/// @return 0 if the lock was successful, -1 otherwise.
 int pthread_rwlock_rdlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t *to_unlock);
 
 /// Tries to lock a rwlock in write mode and checks for errors.
 /// @param rwlock the rwlock to lock.
 /// @param toUnlock in case of error, unlock this rwlock.
-/// @return 0 if the lock was successful, 1 otherwise.
+/// @return 0 if the lock was successful, -1 otherwise.
 int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t *to_unlock);
 
 /// Hash function to calculate the index of the key.
@@ -50,19 +50,19 @@ HashTable *create_hash_table();
 /// @param ht Hash table to be modified.
 /// @param key Key of the pair to be written.
 /// @param value Value of the pair to be written.
-/// @return 0 if the node was appended successfully, 1 otherwise.
+/// @return 0 if the node was appended successfully, -1 otherwise.
 int write_pair(HashTable *ht, const char *key, const char *value);
 
 /// Deletes the value of given key.
 /// @param ht Hash table to delete from.
 /// @param key Key of the pair to be deleted.
-/// @return 0 if the node was deleted successfully, 1 otherwise.
+/// @return 0 if the node was deleted successfully, -1 otherwise.
 char* read_pair(HashTable *ht, const char *key);
 
 /// Appends a new node to the list.
 /// @param list Event list to be modified.
 /// @param key Key of the pair to read.
-/// @return 0 if the node was appended successfully, 1 otherwise.
+/// @return 0 if the node was appended successfully, -1 otherwise.
 int delete_pair(HashTable *ht, const char *key);
 
 /// Frees the hashtable.

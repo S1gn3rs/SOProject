@@ -4,12 +4,12 @@
 #include <stddef.h>
 
 /// Initializes the KVS state.
-/// @return 0 if the KVS state was initialized successfully, 1 otherwise.
+/// @return 0 if the KVS state was initialized successfully, -1 otherwise.
 int kvs_init();
 
 
 /// Destroys the KVS state.
-/// @return 0 if the KVS state was terminated successfully, 1 otherwise.
+/// @return 0 if the KVS state was terminated successfully, -1 otherwise.
 int kvs_terminate();
 
 
@@ -17,7 +17,7 @@ int kvs_terminate();
 /// @param num_pairs Number of pairs being written.
 /// @param keys Array of keys' strings.
 /// @param values Array of values' strings.
-/// @return 0 if the pairs were written successfully, 1 otherwise.
+/// @return 0 if the pairs were written successfully, -1 otherwise.
 int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE],\
     char values[][MAX_STRING_SIZE]);
 
@@ -27,7 +27,7 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE],\
 /// @param num_pairs Number of pairs to read.
 /// @param keys Array of keys' strings.
 /// @param fd File descriptor to write the (successful) output.
-/// @return 0 if the key reading, 1 otherwise.
+/// @return 0 if the key reading, -1 otherwise.
 int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]);
 
 
@@ -35,7 +35,7 @@ int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]);
 /// @param fd File descriptor to write the output.
 /// @param num_pairs Number of pairs to read.
 /// @param keys Array of keys' strings.
-/// @return 0 if the pairs were deleted successfully, 1 otherwise.
+/// @return 0 if the pairs were deleted successfully, -1 otherwise.
 int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]);
 
 
@@ -47,7 +47,7 @@ int kvs_show(int fd);
 /// Creates a backup of the KVS state and stores it in the correspondent
 /// backup file
 /// @param fd File descriptor to write the output.
-/// @return 0 if the backup was successful, 1 otherwise.
+/// @return 0 if the backup was successful, -1 otherwise.
 int kvs_backup(int fd);
 
 

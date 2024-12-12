@@ -67,7 +67,7 @@ int pthread_rwlock_rdlock_error_check(pthread_rwlock_t *rwlock, \
         // if first unlock get an error unlock toUnlock
         if (to_unlock != NULL) pthread_rwlock_unlock(to_unlock);
         fprintf(stderr, "Error locking list rwl to read\n");
-        return 1;
+        return -1;
     }
     return 0;
 }
@@ -78,7 +78,7 @@ int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, \
     if (pthread_rwlock_wrlock(rwlock) != 0) {
         if (to_unlock != NULL) pthread_rwlock_unlock(to_unlock);
         fprintf(stderr, "Error locking list rwl to write\n");
-        return 1;
+        return -1;
     }
     return 0;
 }
@@ -102,19 +102,19 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
     }
     // Key not found; create a new key node
     new_key_node = malloc(sizeof(KeyNode));
-    if (!new_key_node) return 1;
+    if (!new_key_node) return -1;
     // Copy the key to the new key node
     new_key_node->key = strdup_error_check(key);
     if (new_key_node->key == NULL){
         free(new_key_node);
-        return 1;
+        return -1;
     }
     // Copy the value to the new key node
     new_key_node->value = strdup_error_check(value);
     if (new_key_node->value == NULL) {
         free(new_key_node->key);
         free(new_key_node);
-        return 1;
+        return -1;
     }
     // Insert the new key node at the beginning of the list
     new_key_node->next = (index_list->head != NULL)? index_list->head : NULL;
@@ -170,7 +170,7 @@ int delete_pair(HashTable *ht, const char *key) {
         prevNode = key_node;        // Move prevNode to current node
         key_node = key_node->next;  // Move to the next node
     }
-    return 1;
+    return -1;
 }
 
 void free_table(HashTable *ht) {

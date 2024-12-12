@@ -1,7 +1,10 @@
 [(c1,KVSERROR)]
 [(c1,KVSERROR)]
 [(chaveAleatoria,KVSMISSING)]
-(a2, valor4)
+(a4, carlota)
+(a1, dinis)
+(a2, anna)
+(cbhave2, valor-exemplo2)
 (chave3, valor-exemplo3)
 (chave2, valor-exemplo2)
 (umaChave, umValor)

@@ -1,4 +1,4 @@
 [(c1,KVSERROR)]
-[(chave2,valor-exemplo2)]
-[(chaveAleatoria,KVSMISSING)]
+[(chave2,valor-exemplo)]
 [(c1,KVSMISSING)(chaveAleatoria,KVSMISSING)]
+[(chaveAleatoria,KVSMISSING)]

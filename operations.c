@@ -23,7 +23,7 @@ static struct timespec delay_to_timespec(unsigned int delay_ms) {
 int kvs_init() {
   if (kvs_table != NULL) {
     fprintf(stderr, "KVS state has already been initialized\n");
-    return 1;
+    return -1;
   }
 
 
@@ -35,7 +35,7 @@ int kvs_init() {
 int kvs_terminate() {
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
-    return 1;
+    return -1;
   }
   free_table(kvs_table);
   return 0;
@@ -120,7 +120,7 @@ int write_error_check(int fd, char *buffer) {
       done += (size_t)total_written;
       buff_len = buff_len - (size_t)total_written;
     }
-    return 1;
+    return -1;
   }
   return 0;
 }
@@ -156,20 +156,20 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], \
 
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
-    return 1;
+    return -1;
   }
 
   indexs = malloc(num_pairs * sizeof(size_t));
   if (indexs == NULL) {
     fprintf(stderr, "Failed to allocate memory for indexs\n");
-    return 1;
+    return -1;
   }
 
   for (size_t i = 0; i < num_pairs; i++) indexs[i] = i;
 
   if (hash_table_rdlock()){
     free(indexs);
-    return 1;
+    return -1;
   }
 
   insertion_sort(indexs, num_pairs, keys); // Sort the indexs based on the keys
@@ -206,15 +206,15 @@ int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
 
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
-    return 1;
+    return -1;
   }
-  if (write_error_check(fd, "[") == 1) {
-      return 1;
+  if (write_error_check(fd, "[") == -1) {
+      return -1;
   }
   indexs = malloc(num_pairs * sizeof(size_t));
   if (indexs == NULL) {
     fprintf(stderr, "Failed to allocate memory for indexs\n");
-    return 1;
+    return -1;
   }
 
   for (size_t i = 0; i < num_pairs; i++) indexs[i] = i;
@@ -233,33 +233,33 @@ int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
     char* result = read_pair(kvs_table, keys[index]);
     if (result == NULL) {
       snprintf(buffer, MAX_WRITE_SIZE, "(%s,KVSERROR)", keys[index]);
-      if (write_error_check(fd, buffer) == 1) {
+      if (write_error_check(fd, buffer) == -1) {
         free(indexs);
 
         // Unlock the hash table's index list that have been locked
         for (size_t ind = 0; ind < 26; ind++)
           if (is_locked[ind]) hash_table_list_unlock(ind);
-        return 1;
+        return -1;
       }
     } else {
       snprintf(buffer, MAX_WRITE_SIZE, "(%s,%s)", keys[index], result);
-      if (write_error_check(fd, buffer) == 1) {
+      if (write_error_check(fd, buffer) == -1) {
         free(indexs);
 
         // Unlock the hash table's index list that have been locked
         for (size_t ind = 0; ind < 26; ind++)
           if (is_locked[ind]) hash_table_list_unlock(ind);
-        return 1;
+        return -1;
       }
     }
     free(result);
   }
-  if (write_error_check(fd, "]\n") == 1) {
+  if (write_error_check(fd, "]\n") == -1) {
     free(indexs);
     // Unlock the hash table's index list that have been locked
     for (size_t ind = 0; ind < 26; ind++)
       if (is_locked[ind]) hash_table_list_unlock(ind);
-    return 1;
+    return -1;
   }
   free(indexs);
   // Unlock the hash table's index list that have been locked
@@ -276,14 +276,14 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
 
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
-    return 1;
+    return -1;
   }
 
   indexs = malloc(num_pairs * sizeof(size_t));
   // Check if the memory was allocated successfully
   if (indexs == NULL) {
     fprintf(stderr, "Failed to allocate memory for indexs\n");
-    return 1;
+    return -1;
   }
 
   // Fill the indexs with the indexs of the pairs
@@ -292,7 +292,7 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
   }
 
   // Lock the hash table for reading
-  if (hash_table_rdlock()) return 1;
+  if (hash_table_rdlock()) return -1;
 
   // Sort the indexs based on the keys
   insertion_sort(indexs, num_pairs, keys);
@@ -304,19 +304,19 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
     if (is_locked[indexList] == 0){
       is_locked[indexList] = 1;
       // Lock the index list for writing
-      if (hash_table_list_wrlock(indexList)) return 1;
+      if (hash_table_list_wrlock(indexList)) return -1;
     }
     if (delete_pair(kvs_table, keys[i]) != 0) {
       snprintf(buffer, MAX_WRITE_SIZE, "(%s,KVSMISSING)", keys[i]);
       if (!aux) {
-        if (write_error_check(fd, "[") == 1) return 1;
+        if (write_error_check(fd, "[") == -1) return -1;
         aux = 1;
       }
-      if (write_error_check(fd, buffer) == 1) return 1;
+      if (write_error_check(fd, buffer) == -1) return -1;
     }
   }
   if (aux) {
-    if (write_error_check(fd, "]\n") == 1) return 1;
+    if (write_error_check(fd, "]\n") == -1) return -1;
   }
 
   // Unlock the hash table's index list that have been locked
@@ -331,7 +331,7 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
 
 int kvs_show(int fd) {
 
-  if (hash_table_wrlock()) return 1;
+  if (hash_table_wrlock()) return -1;
 
   for (int i = 0; i < TABLE_SIZE; i++) {
     char buffer[MAX_WRITE_SIZE]; // Buffer to store the show content
@@ -347,9 +347,9 @@ int kvs_show(int fd) {
       key_node->value);
 
       //Try to write the key value pair to the file descriptor
-      if (write_error_check(fd, buffer) == 1) {
+      if (write_error_check(fd, buffer) == -1) {
         pthread_rwlock_unlock(&kvs_table->rwl);
-        return 1;
+        return -1;
       }
       key_node = key_node->next; // Move to the next node
     }
@@ -394,7 +394,7 @@ int kvs_backup(int fd) {
       *buf_ptr++ = '\0';
 
       // Write the buffer to the file
-      if (write_error_check(fd, buffer) == 1) return 1;
+      if (write_error_check(fd, buffer) == -1) return -1;
 
       // Move to the next node
       key_node = key_node->next;

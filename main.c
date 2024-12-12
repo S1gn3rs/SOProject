@@ -18,34 +18,34 @@ pthread_mutex_t mutex;
 
 // Struct to pass arguments to the thread function.
 typedef struct ThreadArgs {
-    char *dir_name;     // Directory name.
-    size_t dir_length;  // Directory name length.
+    char *dir_name;           // Directory name.
+    size_t dir_length;        // Directory name length.
 }ThreadArgs;
 
-int max_backups = 1;    // Max number of concurrent backups.
-int active_backups = 0; // Number of active backups.
-DIR *directory;         // Directory to process.
+int max_backups = 1;          // Max number of concurrent backups.
+int active_backups = 0;       // Number of active backups.
+DIR *directory;               // Directory to process.
+
 
 // Thread function to process the .job files.
 void *do_commands(void *args) {
-  // Directory entry.
-  struct dirent *entry;
+  struct dirent *entry;       // Directory entry.
+  size_t length_entry_name;   // Get the file name len.
 
   // Lock the mutex to read the directory.
-    if (pthread_mutex_lock(&mutex)){
-      fprintf(stderr, "Error trying to lock a mutex\n");
-      return NULL;
-    }
-    while ((entry = readdir(directory)) != NULL) {
+  if (pthread_mutex_lock(&mutex)){
+    fprintf(stderr, "Error trying to lock a mutex\n");
+    return NULL;
+  }
+  while ((entry = readdir(directory)) != NULL) {
 
     pthread_mutex_unlock(&mutex);
 
-    // Get the file name len.
-    size_t length_entry_name = strlen(entry->d_name);
+    length_entry_name = strlen(entry->d_name);
 
     // Check if the file is a .job file if not continue to the next file.
     if (length_entry_name < 4 || strcmp(entry->d_name + length_entry_name - 4,\
-     ".job") != 0){
+    ".job") != 0){
 
       if (pthread_mutex_lock(&mutex)){
         fprintf(stderr, "Error trying to lock a mutex\n");
@@ -54,24 +54,14 @@ void *do_commands(void *args) {
       continue;
     }
 
-    // Array to store the keys of the commands.
     char keys[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
-    // Array to store the values of the commands.
     char values[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
-    // Delay of the WAIT command.
-    unsigned int delay;
-    // Number of pairs.
-    size_t num_pairs;
-
-    // Struct to read the arguments passed to the thread function.
-    ThreadArgs *thread_args = (ThreadArgs*) args;
-
-    // Path for the iout_pathnput file.
     char in_path[MAX_JOB_FILE_NAME_SIZE];
-    // Path for the output file.
     char out_path[MAX_JOB_FILE_NAME_SIZE];
-    // Path for the backup file.
     char bck_path[MAX_JOB_FILE_NAME_SIZE];
+    unsigned int delay;   // Delay of the WAIT command.
+    size_t num_pairs;     // Number of pairs.
+    ThreadArgs *thread_args = (ThreadArgs*) args;
 
     // Get the name of the current file.
     char *entry_name = entry->d_name;
@@ -207,7 +197,6 @@ void *do_commands(void *args) {
               if (kvs_backup(bck_fd))
                 fprintf(stderr, "Failed to perform backup\n");
             }
-            // clean all fd and memory in use after end of backup.
             kvs_terminate();
             close(in_fd);
             close(out_fd);
@@ -261,7 +250,7 @@ int main(int argc, char *argv[]) {
   if (argc < 2 || argc > 4){
     fprintf(stderr, "Incorrect arguments.\n Correct use: %s\
     <jobs_directory> [concurrent_backups] [max_threads]\n", argv[0]);
-    return 1;
+    return -1;
   }
 
   // Open the directory.
@@ -273,7 +262,7 @@ int main(int argc, char *argv[]) {
   // Check if the directory was opened successfully.
   if (directory == NULL){
     perror("Error while trying to open directory\n");
-    return 1;
+    return -1;
   }
 
   // Check if we had more than 2 arguments and if the number of concurrent
@@ -282,7 +271,7 @@ int main(int argc, char *argv[]) {
     if( (max_backups = atoi(argv[2])) < 1){
       perror("Number of concurrent backups not valid.\n");
       closedir(directory); // Close the directory in case of error.
-      return 1;
+      return -1;
     }
   }
 
@@ -295,7 +284,7 @@ int main(int argc, char *argv[]) {
     if( (max_threads = atoi(argv[3])) < 1){
       perror("Number of threads not valid.\n");
       closedir(directory); // Close the directory in case of error.
-      return 1;
+      return -1;
     }
   }
 
@@ -303,14 +292,14 @@ int main(int argc, char *argv[]) {
   if (kvs_init()) {
     fprintf(stderr, "Failed to initialize KVS\n");
     closedir(directory);
-    return 1;
+    return -1;
   }
 
   // Initialize the global mutex
   if(pthread_mutex_init(&mutex, NULL)){
     fprintf(stderr, "Failed to initialize the mutex\n");
     closedir(directory);
-    return 1;
+    return -1;
   }
 
   // Thread pool.
@@ -326,7 +315,7 @@ int main(int argc, char *argv[]) {
     closedir(directory);
     kvs_terminate();
     pthread_mutex_destroy(&mutex);
-    return 1;
+    return -1;
   }
 
   // Assign struct attributes.
