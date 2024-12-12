@@ -334,9 +334,11 @@ int main(int argc, char *argv[]) {
   }
 
   // Wait for the threads to finish.
-  for(int i = 0; i < thread_count; i++) {
-    if (threadsError[i]) continue; // if it did not
-    pthread_join(threads[i], NULL);
+  for (int i = 0; i < thread_count; i++) {
+    if (threadsError[i]) continue; // Skip if there was an error
+    if (pthread_join(threads[i], NULL) != 0) {
+      fprintf(stderr, "Error: Unable to join thread %d.\n", i);
+    }
   }
 
   // Free the arguments struct.
