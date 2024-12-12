@@ -18,16 +18,13 @@ pthread_mutex_t mutex;
 
 // Struct to pass arguments to the thread function.
 typedef struct ThreadArgs {
-    char *dir_name; // Directory name.
-    size_t dir_length; // Directory name length.
+    char *dir_name;       // Directory name.
+    size_t dir_length;    // Directory name length.
 }ThreadArgs;
 
-// Max number of concurrent backups.
-int max_backups = 1;
-// Number of active backups.
-int active_backups = 0;
-// Directory to process.
-DIR *directory;
+int max_backups = 1;    // Max number of concurrent backups.
+int active_backups = 0; // Number of active backups.
+DIR *directory;         // Directory to process.
 
 // Thread function to process the .job files.
 void *thread_function(void *args) {

@@ -1,5 +1,4 @@
 #include "kvs.h"
-#include "kvs.h"
 #include <string.h>
 #include <stdio.h>
 
