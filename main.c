@@ -38,7 +38,6 @@ void *do_commands(void *args) {
     }
     while ((entry = readdir(directory)) != NULL) {
 
-    // Unlock the mutex after reading from the directory to process the file.
     pthread_mutex_unlock(&mutex);
 
     // Get the file name len.
