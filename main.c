@@ -13,8 +13,6 @@
 #include "operations.h"
 #include <sys/stat.h>
 
-//balblablbal
-
 // Global mutex to protect the access to the directory.
 pthread_mutex_t mutex;
 
