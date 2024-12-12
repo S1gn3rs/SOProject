@@ -18,8 +18,8 @@ pthread_mutex_t mutex;
 
 // Struct to pass arguments to the thread function.
 typedef struct ThreadArgs {
-    char *dir_name;       // Directory name.
-    size_t dir_length;    // Directory name length.
+    char *dir_name;     // Directory name.
+    size_t dir_length;  // Directory name length.
 }ThreadArgs;
 
 int max_backups = 1;    // Max number of concurrent backups.
@@ -27,7 +27,7 @@ int active_backups = 0; // Number of active backups.
 DIR *directory;         // Directory to process.
 
 // Thread function to process the .job files.
-void *thread_function(void *args) {
+void *do_commands(void *args) {
   // Directory entry.
   struct dirent *entry;
 
@@ -336,7 +336,7 @@ int main(int argc, char *argv[]) {
 
   // Create the threads.
   for(thread_count = 0; thread_count < max_threads; thread_count++){
-    if (pthread_create(&threads[thread_count], NULL, thread_function,\
+    if (pthread_create(&threads[thread_count], NULL, do_commands,\
       (void *)args) != 0) {
 
       fprintf(stderr, "Error: Unable to create thread %d.\n", thread_count);
