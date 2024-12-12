@@ -9,9 +9,9 @@ WRITE [(chave2,valor-exemplo2)(umaChave,umValor)]
 #backup
 BACKUP
 # Eliminação de chave existente e de chave não existente
-#DELETE [c1,chaveAleatoria]
+DELETE [c1,chaveAleatoria]
 WRITE [(cbhave2,valor-exemplo2)(umaChave,umValor)]
-#DELETE [c1,chaveAleatoria]
+DELETE [c1,chaveAleatoria]
 WRITE [(cave2,valor-exemplo2)(umaChave,umValor)]
 DELETE [umaChave]
 BACKUP
