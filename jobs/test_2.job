@@ -1,0 +1,9 @@
+WRITE
+[(Key1,Value1)(Key2,Value2)(Key3,Value3)]
+WAIT
+2972
+DELETE
+[Key1,Key2,Key3]
+SHOW
+READ
+[Key1,Key2,Key3]
