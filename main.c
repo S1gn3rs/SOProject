@@ -168,8 +168,9 @@ void *do_commands(void *args) {
           //maximum number of backups.
           if (active_backups >= max_backups) {
             int status;
-            wait(&status);// wait for a backup to finish
-            if (status) fprintf(stderr, "Error while doing a backup\n");
+            if (wait(&status) == -1) {
+              perror("Error waiting for backup to be finished."); // Handle wait error
+            }
           }
           else active_backups++;
           backups_made++;
@@ -354,7 +355,11 @@ int main(int argc, char *argv[]) {
   kvs_terminate();
 
   // Wait for the backups to finish.
-  while (active_backups-- > 0) wait(NULL);
+  while (active_backups-- > 0){
+    if(wait(NULL) == -1){
+      perror("Error waiting for backup to be finished.");
+    }
+  };
 
   return 0;
 }
