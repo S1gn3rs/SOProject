@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <unistd.h>
 
+
 /// Tries to duplicate a string and checks for errors.
 /// @param bufferToCopy string to be duplicated.
 /// @return a new duplicated string in success or null pointer otherwise.
@@ -33,6 +34,7 @@ int hash(const char *key) {
     return -1; // Invalid index for non-alphabetic or number strings
 }
 
+
 /// Function to create a new IndexList.
 /// @return a pointer to the new IndexList or NULL on failure.
 IndexList* create_IndexList(){
@@ -45,6 +47,7 @@ IndexList* create_IndexList(){
   index_list->head = NULL;
   return index_list;
 }
+
 
 HashTable* create_hash_table() {
   HashTable *ht = malloc(sizeof(HashTable));
@@ -60,6 +63,7 @@ HashTable* create_hash_table() {
   return ht;
 }
 
+
 int pthread_rwlock_rdlock_error_check(pthread_rwlock_t *rwlock, \
     pthread_rwlock_t *to_unlock){
 
@@ -71,6 +75,7 @@ int pthread_rwlock_rdlock_error_check(pthread_rwlock_t *rwlock, \
     }
     return 0;
 }
+
 
 int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, \
     pthread_rwlock_t *to_unlock){
@@ -123,6 +128,7 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
     return 0;
 }
 
+
 char* read_pair(HashTable *ht, const char *key) {
     int index = hash(key);
     KeyNode *key_node;
@@ -141,6 +147,7 @@ char* read_pair(HashTable *ht, const char *key) {
     }
     return NULL; // Key not found
 }
+
 
 int delete_pair(HashTable *ht, const char *key) {
     int index = hash(key);
@@ -172,6 +179,7 @@ int delete_pair(HashTable *ht, const char *key) {
     }
     return -1;
 }
+
 
 void free_table(HashTable *ht) {
     // Iterate over the hash table

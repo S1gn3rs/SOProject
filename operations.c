@@ -132,7 +132,7 @@ int write_error_check(int fd, char *buffer) {
 /// @param keys Correspondent key for each index.
 void insertion_sort(size_t *indexs, size_t num_pairs,\
   char keys[][MAX_STRING_SIZE]) {
-  
+
   // Iterate over the indexs
   for (size_t i = 1; i < num_pairs; i++) {
     size_t current = indexs[i];
@@ -171,6 +171,7 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], \
     free(indexs);
     return -1;
   }
+
 
   insertion_sort(indexs, num_pairs, keys); // Sort the indexs based on the keys
   // Iterate over the pairs
@@ -358,6 +359,7 @@ int kvs_show(int fd) {
   return 0;
 }
 
+
 int kvs_backup(int fd) {
   char buffer[MAX_WRITE_SIZE]; // Buffer to store the backup content
 
@@ -403,10 +405,12 @@ int kvs_backup(int fd) {
   return 0;
 }
 
+
 void kvs_wait(unsigned int delay_ms) {
   struct timespec delay = delay_to_timespec(delay_ms);
   nanosleep(&delay, NULL);
 }
+
 
 /// A safe fork preventing the child process to have any locks on the hash table
 /// @return value of the child's pid to parent process and 0 to child process.

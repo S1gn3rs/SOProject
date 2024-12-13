@@ -239,11 +239,11 @@ void *do_commands(void *args) {
       continue;
     }
   }
-
   // Unlock the mutex after thread has no more files to process.
   pthread_mutex_unlock(&mutex);
   return NULL;
 }
+
 
 int main(int argc, char *argv[]) {
 
