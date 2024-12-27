@@ -6,8 +6,13 @@
 #include <unistd.h>
 
 #include "constants.h"
+#include "io.h"
 
-
+// Reads a string and indicates the position from where it was
+// extracted, based on the KVS specification.
+// @param fd File to read from.
+// @param buffer To write the string in.
+// @param max Maximum string size.
 static int read_string(int fd, char *buffer, size_t max) {
   ssize_t bytes_read;
   char ch;
@@ -46,7 +51,11 @@ static int read_string(int fd, char *buffer, size_t max) {
   return value;
 }
 
-
+// Reads a number and stores it in an unsigned integer
+// variable.
+// @param fd File to read from.
+// @param value To store the number in.
+// @param next Will point to the character succeding the number.
 static int read_uint(int fd, unsigned int *value, char *next) {
   char buf[16];
 
@@ -78,13 +87,13 @@ static int read_uint(int fd, unsigned int *value, char *next) {
   return 0;
 }
 
-
+// Jumps file descriptor to next line.
+// @param fd File descriptor.
 static void cleanup(int fd) {
   char ch;
   while (read(fd, &ch, 1) == 1 && ch != '\n')
     ;
 }
-
 
 enum Command get_next(int fd) {
   char buf[16];
@@ -172,7 +181,11 @@ enum Command get_next(int fd) {
   }
 }
 
-
+// Parses a key value pair.
+// @param fd File decriptor to read from.
+// @param key Pointer where the key will be stored
+// @param value Pointer where the value will be stored
+// @return 1 if successful, 0 otherwise.
 int parse_pair(int fd, char *key, char *value) {
   if (read_string(fd, key, MAX_STRING_SIZE) != 0) {
     cleanup(fd);
@@ -186,7 +199,6 @@ int parse_pair(int fd, char *key, char *value) {
 
   return 1;
 }
-
 
 size_t parse_write(int fd, char keys[][MAX_STRING_SIZE], char values[][MAX_STRING_SIZE], size_t max_pairs, size_t max_string_size) {
   char ch;
@@ -236,7 +248,6 @@ size_t parse_write(int fd, char keys[][MAX_STRING_SIZE], char values[][MAX_STRIN
   return num_pairs;
 }
 
-
 size_t parse_read_delete(int fd, char keys[][MAX_STRING_SIZE], size_t max_keys, size_t max_string_size) {
   char ch;
 
@@ -273,7 +284,6 @@ size_t parse_read_delete(int fd, char keys[][MAX_STRING_SIZE], size_t max_keys, 
 
   return num_keys;
 }
-
 
 int parse_wait(int fd, unsigned int *delay, unsigned int *thread_id) {
   char ch;

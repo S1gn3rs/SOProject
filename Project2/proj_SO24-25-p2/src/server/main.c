@@ -1,337 +1,394 @@
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #include <dirent.h>
 #include <fcntl.h>
-#include <limits.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
 #include <sys/wait.h>
-#include <stdio.h>
+#include <pthread.h>
 
 #include "constants.h"
 #include "parser.h"
 #include "operations.h"
-#include "io.h"
-#include "pthread.h"
+#include "../common/constants.h"
+#include <sys/stat.h>
 
-struct SharedData {
-  DIR* dir;
-  char* dir_name;
-  pthread_mutex_t directory_mutex;
-};
+// Global mutex to protect the access to the directory.
+pthread_mutex_t mutex;
 
-pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
+// Struct to pass arguments to the thread function.
+typedef struct ThreadArgs {
+    char *dir_name;           // Directory name.
+    size_t dir_length;        // Directory name length.
+}ThreadArgs;
 
-size_t active_backups = 0;     // Number of active backups
-size_t max_backups;            // Maximum allowed simultaneous backups
-size_t max_threads;            // Maximum allowed simultaneous threads
-char* jobs_directory = NULL;
+int max_backups = 1;          // Max number of concurrent backups.
+int active_backups = 0;       // Number of active backups.
+DIR *directory;               // Directory to process.
 
-int filter_job_files(const struct dirent* entry) {
-    const char* dot = strrchr(entry->d_name, '.');
-    if (dot != NULL && strcmp(dot, ".job") == 0) {
-        return 1;  // Keep this file (it has the .job extension)
-    }
-    return 0;
-}
 
-static int entry_files(const char* dir, struct dirent* entry, char* in_path, char* out_path) {
-  const char* dot = strrchr(entry->d_name, '.');
-  if (dot == NULL || dot == entry->d_name || strlen(dot) != 4 || strcmp(dot, ".job")) {
-    return 1;
-  }
+// Thread function to process the .job files.
+void *do_commands(void *args) {
+  struct dirent *entry;       // Directory entry.
+  size_t length_entry_name;   // Get the file name len.
 
-  if (strlen(entry->d_name) + strlen(dir) + 2 > MAX_JOB_FILE_NAME_SIZE) {
-    fprintf(stderr, "%s/%s\n", dir, entry->d_name);
-    return 1;
-  }
-
-  strcpy(in_path, dir);
-  strcat(in_path, "/");
-  strcat(in_path, entry->d_name);
-
-  strcpy(out_path, in_path);
-  strcpy(strrchr(out_path, '.'), ".out");
-
-  return 0;
-}
-
-static int run_job(int in_fd, int out_fd, char* filename) {
-  size_t file_backups = 0;
-  while (1) {
-    char keys[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
-    char values[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
-    unsigned int delay;
-    size_t num_pairs;
-
-    switch (get_next(in_fd)) {
-      case CMD_WRITE:
-        num_pairs = parse_write(in_fd, keys, values, MAX_WRITE_SIZE, MAX_STRING_SIZE);
-        if (num_pairs == 0) {
-          write_str(STDERR_FILENO, "Invalid command. See HELP for usage\n");
-          continue;
-        }
-
-        if (kvs_write(num_pairs, keys, values)) {
-          write_str(STDERR_FILENO, "Failed to write pair\n");
-        }
-        break;
-
-      case CMD_READ:
-        num_pairs = parse_read_delete(in_fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
-
-        if (num_pairs == 0) {
-          write_str(STDERR_FILENO, "Invalid command. See HELP for usage\n");
-          continue;
-        }
-
-        if (kvs_read(num_pairs, keys, out_fd)) {
-          write_str(STDERR_FILENO, "Failed to read pair\n");
-        }
-        break;
-
-      case CMD_DELETE:
-        num_pairs = parse_read_delete(in_fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
-
-        if (num_pairs == 0) {
-          write_str(STDERR_FILENO, "Invalid command. See HELP for usage\n");
-          continue;
-        }
-
-        if (kvs_delete(num_pairs, keys, out_fd)) {
-          write_str(STDERR_FILENO, "Failed to delete pair\n");
-        }
-        break;
-
-      case CMD_SHOW:
-        kvs_show(out_fd);
-        break;
-
-      case CMD_WAIT:
-        if (parse_wait(in_fd, &delay, NULL) == -1) {
-          write_str(STDERR_FILENO, "Invalid command. See HELP for usage\n");
-          continue;
-        }
-
-        if (delay > 0) {
-          printf("Waiting %d seconds\n", delay / 1000);
-          kvs_wait(delay);
-        }
-        break;
-
-      case CMD_BACKUP:
-        pthread_mutex_lock(&n_current_backups_lock);
-        if (active_backups >= max_backups) {
-          wait(NULL);
-        } else {
-          active_backups++;
-        }
-        pthread_mutex_unlock(&n_current_backups_lock);
-        int aux = kvs_backup(++file_backups, filename, jobs_directory);
-
-        if (aux < 0) {
-            write_str(STDERR_FILENO, "Failed to do backup\n");
-        } else if (aux == 1) {
-          return 1;
-        }
-        break;
-
-      case CMD_INVALID:
-        write_str(STDERR_FILENO, "Invalid command. See HELP for usage\n");
-        break;
-
-      case CMD_HELP:
-        write_str(STDOUT_FILENO,
-            "Available commands:\n"
-            "  WRITE [(key,value)(key2,value2),...]\n"
-            "  READ [key,key2,...]\n"
-            "  DELETE [key,key2,...]\n"
-            "  SHOW\n"
-            "  WAIT <delay_ms>\n"
-            "  BACKUP\n" // Not implemented
-            "  HELP\n");
-
-        break;
-
-      case CMD_EMPTY:
-        break;
-
-      case EOC:
-        printf("EOF\n");
-        return 0;
-    }
-  }
-}
-
-//frees arguments
-static void* get_file(void* arguments) {
-  struct SharedData* thread_data = (struct SharedData*) arguments;
-  DIR* dir = thread_data->dir;
-  char* dir_name = thread_data->dir_name;
-
-  if (pthread_mutex_lock(&thread_data->directory_mutex) != 0) {
-    fprintf(stderr, "Thread failed to lock directory_mutex\n");
+  // Lock the mutex to read the directory.
+  if (pthread_mutex_lock(&mutex)){
+    fprintf(stderr, "Error trying to lock a mutex\n");
     return NULL;
   }
+  while ((entry = readdir(directory)) != NULL) {
 
-  struct dirent* entry;
-  char in_path[MAX_JOB_FILE_NAME_SIZE], out_path[MAX_JOB_FILE_NAME_SIZE];
-  while ((entry = readdir(dir)) != NULL) {
-    if (entry_files(dir_name, entry, in_path, out_path)) {
+    pthread_mutex_unlock(&mutex);
+
+    length_entry_name = strlen(entry->d_name);
+
+    // Check if the file is a .job file if not continue to the next file.
+    if (length_entry_name < 4 || strcmp(entry->d_name + length_entry_name - 4,\
+    ".job") != 0){
+
+      if (pthread_mutex_lock(&mutex)){
+        fprintf(stderr, "Error trying to lock a mutex\n");
+        return NULL;
+      }
       continue;
     }
 
-    if (pthread_mutex_unlock(&thread_data->directory_mutex) != 0) {
-      fprintf(stderr, "Thread failed to unlock directory_mutex\n");
+    char keys[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
+    char values[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
+    char in_path[MAX_JOB_FILE_NAME_SIZE];
+    char out_path[MAX_JOB_FILE_NAME_SIZE];
+    char bck_path[MAX_JOB_FILE_NAME_SIZE];
+    unsigned int delay;   // Delay of the WAIT command.
+    size_t num_pairs;     // Number of pairs.
+    ThreadArgs *thread_args = (ThreadArgs*) args;
+
+    // Get the name of the current file.
+    char *entry_name = entry->d_name;
+    // Get the size of the current path.
+    size_t size_path = thread_args->dir_length + length_entry_name + 2;
+
+    // Create the path for the input file.
+    snprintf(in_path, size_path, "%s/%s", thread_args->dir_name, entry_name);
+    // Create the path for the output file.
+    snprintf(out_path, size_path, "%s/%.*s.out", thread_args->dir_name,\
+      (int)length_entry_name - 4, entry_name);
+
+    // Open the input file.
+    int in_fd = open(in_path, O_RDONLY);
+    if(in_fd == -1){
+      perror("Input file could not be open\n");
       return NULL;
     }
 
-    int in_fd = open(in_path, O_RDONLY);
-    if (in_fd == -1) {
-      write_str(STDERR_FILENO, "Failed to open input file: ");
-      write_str(STDERR_FILENO, in_path);
-      write_str(STDERR_FILENO, "\n");
-      pthread_exit(NULL);
+    // Open the output file.
+    int out_fd = open(out_path, O_CREAT | O_TRUNC | O_WRONLY ,\
+      S_IRUSR | S_IWUSR);
+
+    if(out_fd == -1){
+      close(in_fd);
+      perror("Output file could not be open\n");
+      return NULL;
     }
 
-    int out_fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    if (out_fd == -1) {
-      write_str(STDERR_FILENO, "Failed to open output file: ");
-      write_str(STDERR_FILENO, out_path);
-      write_str(STDERR_FILENO, "\n");
-      pthread_exit(NULL);
+    // Number of backups made in the current file.
+    int backups_made = 0;
+
+    int reading_commands = 1; // flag to let commands from the file.
+    while(reading_commands){
+      // Get the next command.
+      switch (get_next(in_fd)) {
+        case CMD_WRITE:
+          num_pairs = parse_write(in_fd, keys, values, MAX_WRITE_SIZE,\
+            MAX_STRING_SIZE);
+          if (num_pairs == 0) {
+            fprintf(stderr, "Invalid command. See HELP for usage\n");
+            continue;
+          }
+
+          if (kvs_write(num_pairs, keys, values)) {
+            fprintf(stderr, "Failed to write pair\n");
+          }
+
+          break;
+
+        case CMD_READ:
+          num_pairs = parse_read_delete(in_fd, keys, MAX_WRITE_SIZE,\
+            MAX_STRING_SIZE);
+
+          if (num_pairs == 0) {
+            fprintf(stderr, "Invalid command. See HELP for usage\n");
+            continue;
+          }
+
+          if (kvs_read(out_fd, num_pairs, keys)) {
+            fprintf(stderr, "Failed to read pair\n");
+          }
+          break;
+
+        case CMD_DELETE:
+          num_pairs = parse_read_delete(in_fd, keys, MAX_WRITE_SIZE,\
+            MAX_STRING_SIZE);
+
+          if (num_pairs == 0) {
+            fprintf(stderr, "Invalid command. See HELP for usage\n");
+            continue;
+          }
+
+          if (kvs_delete(out_fd, num_pairs, keys)) {
+            fprintf(stderr, "Failed to delete pair\n");
+          }
+          break;
+
+        case CMD_SHOW:
+          kvs_show(out_fd);
+          break;
+
+        case CMD_WAIT:
+          if (parse_wait(in_fd, &delay, NULL) == -1) {
+            fprintf(stderr, "Invalid command. See HELP for usage\n");
+            continue;
+          }
+
+          if (delay > 0) {
+            if (write(out_fd, "Waiting...\n", 11) == -1) {
+              perror("Error writing.\n");
+            }
+            kvs_wait(delay);
+          }
+          break;
+
+        case CMD_BACKUP:
+          // Lock the mutex to check if we can make a backup.
+          if (pthread_mutex_lock(&mutex)){
+            fprintf(stderr, "Error trying to lock a mutex\n");
+            continue;
+          }
+
+          // Check if the number of active backups is less than the
+          //maximum number of backups.
+          if (active_backups >= max_backups) {
+            int status;
+            if (wait(&status) == -1) {
+              perror("Error waiting for backup to be finished."); // Handle wait error
+            }
+          }
+          else active_backups++;
+          backups_made++;
+
+          // Unlock the mutex after checking if we can make a backup.
+          pthread_mutex_unlock(&mutex);
+          // Create safely a child process to make the backup.
+          pid_t pid = do_fork();
+          // Check if the child process was created successfully.
+          if(pid == -1){
+            fprintf(stderr, "Failed to create child process\n");
+            continue;
+          }
+          if (pid == 0){ // Check if we are in the child process.
+            // Create the path for the backup file.
+            snprintf(bck_path, size_path + 3, "%s/%.*s-%d.bck",\
+              thread_args->dir_name, (int)length_entry_name - 4, entry_name,\
+              backups_made);
+            // Open the backup file.
+            int bck_fd = open(bck_path, O_CREAT | O_TRUNC | O_WRONLY ,\
+              S_IRUSR | S_IWUSR);
+            // Check if the backup file was opened successfully.
+            if(bck_fd == -1) perror("File could not be open.\n");
+            else{
+              if (kvs_backup(bck_fd))
+                fprintf(stderr, "Failed to perform backup\n");
+            }
+            kvs_terminate();
+            close(in_fd);
+            close(out_fd);
+            closedir(directory);
+            exit(0);
+          }
+          break;
+
+        case CMD_INVALID:
+          fprintf(stderr, "Invalid command. See HELP for usage\n");
+          break;
+
+        case CMD_HELP:
+          printf(
+              "Available commands:\n"
+              "  WRITE [(key,value)(key2,value2),...]\n"
+              "  READ [key,key2,...]\n"
+              "  DELETE [key,key2,...]\n"
+              "  SHOW\n"
+              "  WAIT <delay_ms>\n"
+              "  BACKUP\n"
+              "  HELP\n"
+          );
+
+          break;
+
+        case CMD_EMPTY:
+          break;
+
+        case EOC:
+          reading_commands = 0;
+      }
     }
-
-    int out = run_job(in_fd, out_fd, entry->d_name);
-
     close(in_fd);
     close(out_fd);
-
-    if (out) {
-      if (closedir(dir) == -1) {
-        fprintf(stderr, "Failed to close directory\n");
-        return 0;
-      }
-
-      exit(0);
-    }
-
-    if (pthread_mutex_lock(&thread_data->directory_mutex) != 0) {
-      fprintf(stderr, "Thread failed to lock directory_mutex\n");
-      return NULL;
+    // Lock the mutex to read the directory.
+    if (pthread_mutex_lock(&mutex)){
+      fprintf(stderr, "Error trying to lock a mutex\n");
+      continue;
     }
   }
-
-  if (pthread_mutex_unlock(&thread_data->directory_mutex) != 0) {
-    fprintf(stderr, "Thread failed to unlock directory_mutex\n");
-    return NULL;
-  }
-
-  pthread_exit(NULL);
+  // Unlock the mutex after thread has no more files to process.
+  pthread_mutex_unlock(&mutex);
+  return NULL;
 }
 
 
-static void dispatch_threads(DIR* dir) {
-  pthread_t* threads = malloc(max_threads * sizeof(pthread_t));
+int main(int argc, char *argv[]) {
 
-  if (threads == NULL) {
-    fprintf(stderr, "Failed to allocate memory for threads\n");
-    return;
+  // Check if the number of arguments is correct.
+  if (argc < 2 || argc > 5){
+    fprintf(stderr, "Incorrect arguments.\n Correct use: %s\
+    <jobs_directory> [concurrent_backups] [max_threads] [server_FIFO_name]\n", argv[0]);
+    return -1;
   }
 
-  struct SharedData thread_data = {dir, jobs_directory, PTHREAD_MUTEX_INITIALIZER};
+  // Open the directory.
+  directory = opendir(argv[1]);
 
+  // Get the length of the directory name.
+  size_t length_dir_name = strlen(argv[1]);
 
-  for (size_t i = 0; i < max_threads; i++) {
-    if (pthread_create(&threads[i], NULL, get_file, (void*)&thread_data) != 0) {
-      fprintf(stderr, "Failed to create thread %zu\n", i);
-      pthread_mutex_destroy(&thread_data.directory_mutex);
-      free(threads);
-      return;
+  int server_pipe_fd;
+
+  // Check if the directory was opened successfully.
+  if (directory == NULL){
+    perror("Error while trying to open directory\n");
+    return -1;
+  }
+
+  // Check if we had more than 2 arguments and if the number of concurrent
+  // backups is valid.
+  if (argc >= 3){
+    if( (max_backups = atoi(argv[2])) < 1){
+      perror("Number of concurrent backups not valid.\n");
+      closedir(directory); // Close the directory in case of error.
+      return -1;
     }
   }
 
-  // ler do FIFO de registo
+  // Default number of threads.
+  int max_threads = 1;
 
-  for (unsigned int i = 0; i < max_threads; i++) {
-    if (pthread_join(threads[i], NULL) != 0) {
-      fprintf(stderr, "Failed to join thread %u\n", i);
-      pthread_mutex_destroy(&thread_data.directory_mutex);
-      free(threads);
-      return;
+  // Check if we had more than 3 arguments and if the number of threads
+  // is valid.
+  if (argc == 4){
+    if( (max_threads = atoi(argv[3])) < 1){
+      perror("Number of threads not valid.\n");
+      closedir(directory); // Close the directory in case of error.
+      return -1;
     }
   }
 
-  if (pthread_mutex_destroy(&thread_data.directory_mutex) != 0) {
-    fprintf(stderr, "Failed to destroy directory_mutex\n");
+  char server_pipe_path[MAX_PIPE_PATH_LENGTH + 6]; // pipe name length plus "/tmp/" and null terminator
+  if (argc == 5){
+    snprintf(server_pipe_path, MAX_PIPE_PATH_LENGTH + 6, "%s%s", "/tmp/", argv[4]);
+    unlink(server_pipe_path);
+    if (mkfifo(server_pipe_path, 0666) < 0){
+      perror("Couldn't create server pipe.\n");
+      closedir(directory); // Close the directory in case of error.
+      return -1;
+    }
   }
 
-  free(threads);
-}
-
-
-int main(int argc, char** argv) {
-  if (argc < 4) {
-    write_str(STDERR_FILENO, "Usage: ");
-    write_str(STDERR_FILENO, argv[0]);
-    write_str(STDERR_FILENO, " <jobs_dir>");
-		write_str(STDERR_FILENO, " <max_threads>");
-		write_str(STDERR_FILENO, " <max_backups> \n");
-    return 1;
+  if ((server_pipe_fd = open(server_pipe_path, O_RDWR)) < 0){ //manter em rdwr ou meter a rd????????????????????????
+    perror("Couldn't open server pipe.\n");
+    unlink(server_pipe_path);     // Close the server pipe in case of error.
+    closedir(directory); // Close the directory in case of error.
+    return -1;
   }
 
-  jobs_directory = argv[1];
-
-  char* endptr;
-  max_backups = strtoul(argv[3], &endptr, 10);
-
-  if (*endptr != '\0') {
-    fprintf(stderr, "Invalid max_proc value\n");
-    return 1;
-  }
-
-  max_threads = strtoul(argv[2], &endptr, 10);
-
-  if (*endptr != '\0') {
-    fprintf(stderr, "Invalid max_threads value\n");
-    return 1;
-  }
-
-	if (max_backups <= 0) {
-		write_str(STDERR_FILENO, "Invalid number of backups\n");
-		return 0;
-	}
-
-	if (max_threads <= 0) {
-		write_str(STDERR_FILENO, "Invalid number of threads\n");
-		return 0;
-	}
-
+  // Initialize the KVS.
   if (kvs_init()) {
-    write_str(STDERR_FILENO, "Failed to initialize KVS\n");
-    return 1;
+    fprintf(stderr, "Failed to initialize KVS\n");
+    close(server_pipe_fd);
+    unlink(server_pipe_path);     // Close the server pipe in case of error.
+    closedir(directory);
+    return -1;
   }
 
-  DIR* dir = opendir(argv[1]);
-  if (dir == NULL) {
-    fprintf(stderr, "Failed to open directory: %s\n", argv[1]);
-    return 0;
+  // Initialize the global mutex
+  if(pthread_mutex_init(&mutex, NULL)){
+    fprintf(stderr, "Failed to initialize the mutex\n");
+    close(server_pipe_fd);
+    unlink(server_pipe_path);     // Close the server pipe in case of error.
+    closedir(directory);
+    return -1;
   }
 
-  dispatch_threads(dir);
+  // Thread pool.
+  pthread_t threads[max_threads];
+  int threadsError[max_threads];
 
-  if (closedir(dir) == -1) {
-    fprintf(stderr, "Failed to close directory\n");
-    return 0;
+  // Number of threads created.
+  int thread_count = 0;
+
+  // Struct to pass arguments to the thread function.
+  ThreadArgs *args = malloc(sizeof(ThreadArgs));
+  if (!args){
+    unlink(server_pipe_path);     // Close the server pipe in case of error.
+    closedir(directory);
+    kvs_terminate();
+    pthread_mutex_destroy(&mutex);
+    return -1;
   }
 
-  while (active_backups > 0) {
-    wait(NULL);
-    active_backups--;
+  // Assign struct attributes.
+  args->dir_length = length_dir_name;
+  args->dir_name = argv[1];
+
+  // Create the threads.
+  for(thread_count = 0; thread_count < max_threads; thread_count++){
+    if (pthread_create(&threads[thread_count], NULL, do_commands,\
+      (void *)args) != 0) {
+
+      fprintf(stderr, "Error: Unable to create thread %d.\n", thread_count);
+      threadsError[thread_count] = 1;
+    }
+    else threadsError[thread_count] = 0;
   }
 
+  // Wait for the threads to finish.
+  for (int i = 0; i < thread_count; i++) {
+    if (threadsError[i]) continue; // Skip if there was an error
+    if (pthread_join(threads[i], NULL) != 0) {
+      fprintf(stderr, "Error: Unable to join thread %d.\n", i);
+    }
+  }
+
+  // Free the arguments struct.
+  free(args);
+
+  // Close the directory.
+  closedir(directory);
+
+  unlink(server_pipe_path);     // Close the server pipe in case of error.
+
+  // Destroy the global mutex.
+  pthread_mutex_destroy(&mutex);
+
+  // Terminate the KVS.
   kvs_terminate();
+
+  // Wait for the backups to finish.
+  while (active_backups-- > 0){
+    if(wait(NULL) == -1){
+      perror("Error waiting for backup to be finished.");
+    }
+  };
 
   return 0;
 }
