@@ -184,6 +184,9 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], \
 
       is_locked[indexList] = 1;
     }
+  }
+  for(size_t ind = 0; ind < num_pairs; ind++) {
+    size_t indexNodes = indexs[ind]; // index of the node to write
     // Try to write the key value pair to the hash table
     if (write_pair(kvs_table, keys[indexNodes], values[indexNodes]) != 0) {
       fprintf(stderr, "Failed to write keypair (%s,%s)\n", keys[indexNodes],\
@@ -230,6 +233,10 @@ int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
       if (hash_table_list_rdlock(indexList)) continue;
       is_locked[indexList] = 1;
     }
+  }
+
+  for (size_t i = 0; i < num_pairs; i++) {
+    size_t index = indexs[i]; // index of the node to read
     // Try to read the key value pair from the hash table
     char* result = read_pair(kvs_table, keys[index]);
     if (result == NULL) {
@@ -297,18 +304,22 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
 
   // Sort the indexs based on the keys
   insertion_sort(indexs, num_pairs, keys);
-
   char buffer[MAX_WRITE_SIZE];
   for (size_t i = 0; i < num_pairs; i++) {
     size_t indexNodes = indexs[i];
     size_t indexList = (size_t) hash(keys[indexNodes]);
+
     if (is_locked[indexList] == 0){
-      is_locked[indexList] = 1;
       // Lock the index list for writing
-      if (hash_table_list_wrlock(indexList)) return -1;
+      if (hash_table_list_wrlock(indexList)) continue;
+      is_locked[indexList] = 1;
     }
-    if (delete_pair(kvs_table, keys[i]) != 0) {
-      snprintf(buffer, MAX_WRITE_SIZE, "(%s,KVSMISSING)", keys[i]);
+  }
+
+  for (size_t i = 0; i < num_pairs; i++) {
+    size_t indexNodes = indexs[i];
+    if (delete_pair(kvs_table, keys[indexNodes]) != 0) {
+      snprintf(buffer, MAX_WRITE_SIZE, "(%s,KVSMISSING)", keys[indexNodes]);
       if (!aux) {
         if (write_error_check(fd, "[") == -1) return -1;
         aux = 1;

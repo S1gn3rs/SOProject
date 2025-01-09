@@ -1,20 +1,20 @@
-[(c1,KVSERROR)]
-[(c1,KVSERROR)]
-[(chaveAleatoria,KVSMISSING)]
+(a3, bernardo)
+(a4, carlota)
+(a2, anna)
+(a1, dinis)
+(cave2, valor-exemplo2)
+(chave2, valor-exemplo)
 (cbhave7, valor-exemplo2)
 (cbhave6, valor-exemplo2)
 (cbhave5, valor-exemplo2)
 (cbhave4, valor-exemplo2)
-(chave2, valor-exemplo2)
 (cbhave3, valor-exemplo2)
 (cbhave1, valor-exemplo2)
 (cbhave2, valor-exemplo2)
-(umaChave, umValor)
+(ZumaChave, umValor)
 (Z2umaChave, umValor)
 (Z3umaChave, umValor)
 (Z4umaChave, umValor)
 (Z5umaChave, umValor)
 (Z6umaChave, umValor)
 (Z7umaChave, umValor)
-[(c1,KVSERROR)]
-[(c1,KVSERROR)]

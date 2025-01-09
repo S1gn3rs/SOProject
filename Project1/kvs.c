@@ -154,7 +154,7 @@ int delete_pair(HashTable *ht, const char *key) {
     IndexList *index_list;
     KeyNode *key_node, *prevNode = NULL;
     index_list = ht->table[index];
-    key_node = index_list->head;
+    key_node = index_list->head;/////////77/////////////////////////////////////////////////////////////77
 
     // Search for the key node
     while (key_node != NULL) {
@@ -163,7 +163,7 @@ int delete_pair(HashTable *ht, const char *key) {
             // Node to delete is the first node in the list
             if (prevNode == NULL) {
                 // Update the table to point to the next node
-                index_list->head = key_node->next;
+                index_list->head = key_node->next;/////////////////////////////////////////////////
             } else {// Node to delete is not the first; bypass it
                 // Link the previous node to the next node
                 prevNode->next = key_node->next;
