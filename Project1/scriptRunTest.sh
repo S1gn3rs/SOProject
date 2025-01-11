@@ -1,6 +1,6 @@
 #!/bin/bash
 
-COMMAND="./kvs jobs/ 3 3"
+COMMAND="./kvs jobs/ 4 4"
 
 while true; do
     # Run the command and capture stdout and stderr

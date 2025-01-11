@@ -1,10 +1,10 @@
-SHOW
+WRITE
+[(Key1,Value1)(Key2,Value2)(Key3,Value3)(Key4,Value4)(Key5,Value5)]
 DELETE
 [Key1]
+WAIT
+2834
+BACKUP
 READ
 [Key1,Key2]
-BACKUP
-WAIT
-4768
-WRITE
-[(Key1,Value1)(Key2,Value2)]
+SHOW

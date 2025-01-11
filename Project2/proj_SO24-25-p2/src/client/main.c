@@ -10,6 +10,10 @@
 #include "src/common/constants.h"
 #include "src/common/io.h"
 
+void notif_function(void *args){
+  
+}
+
 
 int main(int argc, char* argv[]) {
   if (argc < 3) {
@@ -21,6 +25,8 @@ int main(int argc, char* argv[]) {
   char resp_pipe_path[256] = "/tmp/resp";
   char notif_pipe_path[256] = "/tmp/notif";
 
+  pthread_t notif_thread;
+
   char keys[MAX_NUMBER_SUB][MAX_STRING_SIZE] = {0};
   unsigned int delay_ms;
   size_t num;
@@ -31,6 +37,18 @@ int main(int argc, char* argv[]) {
 
   // TODO open pipes
 
+  int client_notifications_fd;
+
+  if (kvs_connect(req_pipe_path, resp_pipe_path, notif_pipe_path, &client_notifications_fd) != 0) {
+    return 1;
+  }
+
+  if (pthread_create(&notif_thread, NULL, notif_function,
+    (void *)args) != 0){
+
+    fprintf(stderr, "Error: Unable to create notifications thread \n");
+  }
+
   while (1) {
     switch (get_next(STDIN_FILENO)) {
       case CMD_DISCONNECT:
@@ -39,6 +57,9 @@ int main(int argc, char* argv[]) {
           return 1;
         }
         // TODO: end notifications thread
+        if (pthread_join(notif_thread, NULL) != 0) {
+          fprintf(stderr, "Error: Unable to join job thread %d.\n", i);
+        }
         printf("Disconnected from server\n");
         return 0;
 

@@ -7,25 +7,62 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <pthread.h>
+#include <sys/stat.h>
+#include <semaphore.h>
 
 #include "constants.h"
 #include "parser.h"
-#include "operations.h"
+#include "operations.h"//Clients struct
 #include "../common/constants.h"
-#include <sys/stat.h>
+#include "../common/protocol.h"
+#include "../common/safeFunctions.h"
 
 // Global mutex to protect the access to the directory.
 pthread_mutex_t mutex;
 
-// Struct to pass arguments to the thread function.
-typedef struct ThreadArgs {
-    char *dir_name;           // Directory name.
-    size_t dir_length;        // Directory name length.
-}ThreadArgs;
+// Struct to pass arguments to the job thread function.
+typedef struct JobThreadArgs {
+  char *dir_name;           // Directory name.
+  size_t dir_length;        // Directory name length.
+}JobThreadArgs;
+
+
+//Clients struct
+typedef struct ClientData {
+  char req_pipe_path[MAX_PIPE_PATH_LENGTH];   // Request pipe path.
+  char resp_pipe_path[MAX_PIPE_PATH_LENGTH];  // Response pipe path.
+  char notif_pipe_path[MAX_PIPE_PATH_LENGTH]; // Notification pipe path.////////////////////////////////////////////////////77777
+  char subscribed_keys[MAX_STRING_SIZE][MAX_NUMBER_SUB]; //////////////////////////////////////////////worth dinamico
+  int session_id;
+}ClientData;
+
+
+//Client Node
+typedef struct ClientNode{
+  struct ClientData data;
+  struct ClientNode* next;
+}ClientNode;
+
+
+//Queue struct, implemented as a linked list
+typedef struct Queue{
+  struct ClientNode* head;
+  struct ClientNode* tail;
+  size_t size; //////////////////////////////////////////////////////////////////////////////77777
+}Queue;
+
 
 int max_backups = 1;          // Max number of concurrent backups.
 int active_backups = 0;       // Number of active backups.
 DIR *directory;               // Directory to process.
+
+Queue queue = {NULL, NULL, 0};
+
+pthread_mutex_t queue_mutex; // Global mutex to protect the changes on the queue.
+
+sem_t sem_remove_from_queue;
+sem_t sem_add_to_queue;
+
 
 
 // Thread function to process the .job files.
@@ -62,7 +99,7 @@ void *do_commands(void *args) {
     char bck_path[MAX_JOB_FILE_NAME_SIZE];
     unsigned int delay;   // Delay of the WAIT command.
     size_t num_pairs;     // Number of pairs.
-    ThreadArgs *thread_args = (ThreadArgs*) args;
+    JobThreadArgs *thread_args = (JobThreadArgs*) args;
 
     // Get the name of the current file.
     char *entry_name = entry->d_name;
@@ -171,7 +208,7 @@ void *do_commands(void *args) {
           if (active_backups >= max_backups) {
             int status;
             if (wait(&status) == -1) {
-              perror("Error waiting for backup to be finished."); // Handle wait error
+              perror("Error waiting for backup to be finished.");
             }
           }
           else active_backups++;
@@ -247,22 +284,117 @@ void *do_commands(void *args) {
 }
 
 
+void *client_thread(void *args) {
+
+  while(1){
+    ClientNode* client;
+
+    sem_wait(&sem_remove_from_queue);
+    pthread_mutex_lock(&queue_mutex);
+
+    client = queue.head;
+    queue.head = client->next;
+    if (queue.head == NULL) {
+      queue.tail = NULL;
+    }
+    queue.size--;
+
+    pthread_mutex_unlock(&queue_mutex);
+    sem_post(&sem_add_to_queue);
+
+    char response_connection[2]; // OP_CODE=1| result
+    response_connection[0] = OP_CODE_CONNECT;
+    response_connection[1] = '1'; // Result starts as 1 and changes to 0 on success.
+
+    int resp_pipe_fd = open(client->data.resp_pipe_path, O_WRONLY);
+    if (resp_pipe_fd == -1){
+      perror("Error opening client response pipe");
+      return NULL;
+    }
+
+    int req_pipe_fd = open(client->data.req_pipe_path, O_RDONLY);
+    if (req_pipe_fd == -1){
+      if (write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1) { ////////////////////////////// verificar
+        perror("Error writing OP_CODE and result to response pipe");
+      }
+      perror("Error opening client request pipe");
+      return NULL;
+    }
+
+    response_connection[1] = '0';
+
+    if (write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1) { ////////////////////////////// verificar
+        perror("Error writing OP_CODE and result to response pipe");
+    }
+
+    int client_connected = 1;
+
+    while(client_connected){
+
+      char op_code;
+      int interrupted_read;
+      int read_output;
+
+      if ((read_output = read_all(req_pipe_fd, op_code, sizeof(char), interrupted_read)) < 0){
+        perror("Couldn't read message from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
+        break;
+      }else if(read_output == 0){
+        perror("Got EOF while trying to read message from client.");
+        break;
+      }
+
+      switch(op_code){
+
+        case OP_CODE_DISCONNECT:
+
+          close(req_pipe_fd);
+          close(resp_pipe_fd);
+          free(client);
+          client_connected = 0;
+          break;
+
+        case OP_CODE_SUBSCRIBE:
+
+          break;
+
+        case OP_CODE_UNSUBSCRIBE:
+
+          break;
+
+      }
+    }
+  }
+}
+
+
+
 int main(int argc, char *argv[]) {
 
   // Check if the number of arguments is correct.
-  if (argc < 2 || argc > 5){
+  if (argc != 5){
     fprintf(stderr, "Incorrect arguments.\n Correct use: %s\
-    <jobs_directory> [concurrent_backups] [max_threads] [server_FIFO_name]\n", argv[0]);
+    <jobs_directory> <concurrent_backups> <max_threads> <server_FIFO_name>\n",\
+    argv[0]);
     return -1;
   }
 
+  size_t length_dir_name = strlen(argv[1]);
+  int server_pipe_fd;
+  int max_threads;
+  // pipe name length plus "/tmp/" and null terminator
+  char server_pipe_path[MAX_PIPE_PATH_LENGTH + 6];
+
+  pthread_t job_threads[max_threads];           // Job thread pool.
+  pthread_t client_threads[MAX_SESSION_COUNT];  // Client thread pool.
+  int job_threads_error[max_threads];
+  int client_threads_error[MAX_SESSION_COUNT];
+
+  JobThreadArgs *job_args;
+
+
+
   // Open the directory.
   directory = opendir(argv[1]);
-
-  // Get the length of the directory name.
-  size_t length_dir_name = strlen(argv[1]);
-
-  int server_pipe_fd;
 
   // Check if the directory was opened successfully.
   if (directory == NULL){
@@ -270,41 +402,33 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  // Check if we had more than 2 arguments and if the number of concurrent
-  // backups is valid.
-  if (argc >= 3){
-    if( (max_backups = atoi(argv[2])) < 1){
+  // Check if the number of concurrent backups is valid.
+  if( (max_backups = atoi(argv[2])) < 1){
       perror("Number of concurrent backups not valid.\n");
       closedir(directory); // Close the directory in case of error.
       return -1;
-    }
   }
 
-  // Default number of threads.
-  int max_threads = 1;
-
-  // Check if we had more than 3 arguments and if the number of threads
-  // is valid.
-  if (argc == 4){
-    if( (max_threads = atoi(argv[3])) < 1){
+  // Check if the number of threads is valid.
+  if( (max_threads = atoi(argv[3])) < 1){
       perror("Number of threads not valid.\n");
       closedir(directory); // Close the directory in case of error.
       return -1;
-    }
   }
 
-  char server_pipe_path[MAX_PIPE_PATH_LENGTH + 6]; // pipe name length plus "/tmp/" and null terminator
-  if (argc == 5){
-    snprintf(server_pipe_path, MAX_PIPE_PATH_LENGTH + 6, "%s%s", "/tmp/", argv[4]);
-    unlink(server_pipe_path);
-    if (mkfifo(server_pipe_path, 0666) < 0){
-      perror("Couldn't create server pipe.\n");
-      closedir(directory); // Close the directory in case of error.
-      return -1;
-    }
+  // Prefix of "/tmp/" in order to change pipe location to /tmp/
+  snprintf(server_pipe_path, MAX_PIPE_PATH_LENGTH+6, "%s%s", "/tmp/", argv[4]);
+
+  unlink(server_pipe_path); // If it already exists delete to create a new one.
+
+  if (mkfifo(server_pipe_path, 0666) < 0){
+    perror("Couldn't create server pipe.\n");
+    closedir(directory); // Close the directory in case of error.
+    return -1;
   }
 
-  if ((server_pipe_fd = open(server_pipe_path, O_RDWR)) < 0){ //manter em rdwr ou meter a rd????????????????????????
+  // Open server pipe in RDWR to make it stay open even without clients.
+  if ((server_pipe_fd = open(server_pipe_path, O_RDWR)) < 0){
     perror("Couldn't open server pipe.\n");
     unlink(server_pipe_path);     // Close the server pipe in case of error.
     closedir(directory); // Close the directory in case of error.
@@ -329,16 +453,11 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  // Thread pool.
-  pthread_t threads[max_threads];
-  int threadsError[max_threads];
 
-  // Number of threads created.
-  int thread_count = 0;
 
   // Struct to pass arguments to the thread function.
-  ThreadArgs *args = malloc(sizeof(ThreadArgs));
-  if (!args){
+  job_args = malloc(sizeof(JobThreadArgs));
+  if (!job_args){
     unlink(server_pipe_path);     // Close the server pipe in case of error.
     closedir(directory);
     kvs_terminate();
@@ -347,30 +466,120 @@ int main(int argc, char *argv[]) {
   }
 
   // Assign struct attributes.
-  args->dir_length = length_dir_name;
-  args->dir_name = argv[1];
+  job_args->dir_length = length_dir_name;
+  job_args->dir_name = argv[1];
 
   // Create the threads.
-  for(thread_count = 0; thread_count < max_threads; thread_count++){
-    if (pthread_create(&threads[thread_count], NULL, do_commands,\
-      (void *)args) != 0) {
+  for(int thread_count = 0; thread_count < max_threads; thread_count++){
+    if (pthread_create(&job_threads[thread_count], NULL, do_commands,\
+      (void *)job_args) != 0) {
 
-      fprintf(stderr, "Error: Unable to create thread %d.\n", thread_count);
-      threadsError[thread_count] = 1;
+      fprintf(stderr, "Error: Unable to create job thread %d.\n", thread_count);
+      job_threads_error[thread_count] = 1;
     }
-    else threadsError[thread_count] = 0;
-  }
-
-  // Wait for the threads to finish.
-  for (int i = 0; i < thread_count; i++) {
-    if (threadsError[i]) continue; // Skip if there was an error
-    if (pthread_join(threads[i], NULL) != 0) {
-      fprintf(stderr, "Error: Unable to join thread %d.\n", i);
-    }
+    else job_threads_error[thread_count] = 0;
   }
 
   // Free the arguments struct.
-  free(args);
+  free(job_args);
+
+
+
+  for(int thread_count = 0; thread_count < MAX_SESSION_COUNT; thread_count++){
+    if (pthread_create(&client_threads[thread_count], NULL, client_thread,\
+    (void *)args) != 0){
+
+      fprintf(stderr, "Error: Unable to create client thread %d.\n", thread_count);
+      client_threads_error[thread_count] = 1;
+    }
+    else client_threads_error[thread_count] = 0;
+  }
+
+
+  sem_init(&sem_add_to_queue, 0, MAX_SESSION_COUNT);
+  sem_init(&sem_remove_from_queue, 0, 0);
+
+  pthread_mutex_init(&queue_mutex, NULL);
+
+  int idClient = 1;
+
+  while (1){
+    int length_client_con = 1 + (MAX_PIPE_PATH_LENGTH + 1) * 3;
+    char client_connection[length_client_con]; /////////////////////CONFIRMAR SE É SUPOSTO TER MAIS 1 PARA O \00 OU NAO ////////////////////////7
+    char *aux_client_conn;
+    int interrupted_read;////////////////// dar handle aqui e na api tmb ///////////////////////////////////////////////////////////////
+    int read_output;
+    ClientNode *client;
+    ClientData *data;
+
+    if ((read_output = read_all(server_pipe_fd, client_connection, length_client_con, interrupted_read)) < 0){
+      perror("Couldn't read connection message from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
+      break;
+    }
+    // Not expected due to how the fifo was opened but included as a precaution.
+    else if(read_output == 0){
+      perror("Got EOF while trying to read message from client.");
+      break;
+    }
+
+    if (*client_connection != OP_CODE_CONNECT){
+      fprintf(stderr, "Message from client had OPCODE: %c instead of OPCODE: 1.\n", OP_CODE_CONNECT);
+      continue;
+    }
+
+    client = malloc(sizeof(ClientNode));
+    if (client == NULL){
+      perror("Could not allocate memory to client structure.");
+      continue;
+    }
+
+    client->next = NULL;
+    client->data.session_id = idClient;
+    aux_client_conn = client_connection + 1;
+    data = &client->data;
+    safe_strncpy(data->req_pipe_path, aux_client_conn, MAX_PIPE_PATH_LENGTH + 1);
+
+    aux_client_conn += MAX_PIPE_PATH_LENGTH + 1;
+    safe_strncpy(data->resp_pipe_path, aux_client_conn, MAX_PIPE_PATH_LENGTH + 1);
+
+    aux_client_conn += MAX_PIPE_PATH_LENGTH + 1;
+    safe_strncpy(data->notif_pipe_path, aux_client_conn,MAX_PIPE_PATH_LENGTH + 1);
+
+    sem_wait(&sem_add_to_queue); // If queue is not full let server add 1 client.
+
+    if (queue.head == NULL)
+      queue.head = client;
+    else
+      queue.tail->next = client;
+
+    queue.tail = client;
+    queue.size++;
+
+
+    sem_post(&sem_remove_from_queue); // Let a thread get one client from the queue.
+
+  idClient++;
+  }
+
+
+
+  // DAQUI PARA BAIXO ACHO QUE NÃO É PRECISO NADA E PELA CONVERSA COM O STOR PODEMOS MANTER OU ELIMINAR --------------------------------------------
+
+
+  // Wait for the threads to finish.
+  for (int i = 0; i < max_threads; i++) {
+    if (job_threads_error[i]) continue; // Skip if there was an error
+    if (pthread_join(job_threads[i], NULL) != 0) {
+      fprintf(stderr, "Error: Unable to join job thread %d.\n", i);
+    }
+  }
+
+  // for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+  //   if (client_threads_error[i]) continue; // Skip if there was an error
+  //   if (pthread_join(client_threads[i], NULL) != 0) {
+  //     fprintf(stderr, "Error: Unable to join  client thread %d.\n", i);
+  //   }
+  // }
 
   // Close the directory.
   closedir(directory);
@@ -379,6 +588,7 @@ int main(int argc, char *argv[]) {
 
   // Destroy the global mutex.
   pthread_mutex_destroy(&mutex);
+
 
   // Terminate the KVS.
   kvs_terminate();

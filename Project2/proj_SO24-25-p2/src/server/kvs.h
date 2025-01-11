@@ -25,18 +25,6 @@ typedef struct HashTable {
     pthread_rwlock_t rwl; // Read-write lock.
 } HashTable;
 
-/// Tries to lock a rwlock in read mode and checks for errors.
-/// @param rwlock the rwlock to lock.
-/// @param toUnlock in case of error, unlock this rwlock.
-/// @return 0 if the lock was successful, -1 otherwise.
-int pthread_rwlock_rdlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t *to_unlock);
-
-/// Tries to lock a rwlock in write mode and checks for errors.
-/// @param rwlock the rwlock to lock.
-/// @param toUnlock in case of error, unlock this rwlock.
-/// @return 0 if the lock was successful, -1 otherwise.
-int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, pthread_rwlock_t *to_unlock);
-
 /// Hash function to calculate the index of the key.
 /// @param key
 /// @return Index of the key.

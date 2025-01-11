@@ -64,29 +64,7 @@ HashTable* create_hash_table() {
 }
 
 
-int pthread_rwlock_rdlock_error_check(pthread_rwlock_t *rwlock, \
-    pthread_rwlock_t *to_unlock){
 
-    if (pthread_rwlock_rdlock(rwlock) != 0) {
-        // if first unlock get an error unlock toUnlock
-        if (to_unlock != NULL) pthread_rwlock_unlock(to_unlock);
-        fprintf(stderr, "Error locking list rwl to read\n");
-        return -1;
-    }
-    return 0;
-}
-
-
-int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, \
-    pthread_rwlock_t *to_unlock){
-
-    if (pthread_rwlock_wrlock(rwlock) != 0) {
-        if (to_unlock != NULL) pthread_rwlock_unlock(to_unlock);
-        fprintf(stderr, "Error locking list rwl to write\n");
-        return -1;
-    }
-    return 0;
-}
 
 
 int write_pair(HashTable *ht, const char *key, const char *value) {

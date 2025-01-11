@@ -1,7 +1,10 @@
+#include <fcntl.h>
+#include <stdio.h>
+
 #include "api.h"
 #include "src/common/constants.h"
 #include "src/common/protocol.h"
-#include <fcntl.h>
+
 
 char api_req_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
 char api_resp_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
@@ -9,13 +12,12 @@ char api_notif_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
 
 int api_req_pipe_fd;
 int api_resp_pipe_fd;
-int api_notif_pipe_fd;
 
 // create pipes and connect
 int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path,
-                char const* notif_pipe_path, int* notif_pipe) {
-
-  char connection_buffer[1 + (MAX_PIPE_PATH_LENGTH + 1) * 3];
+                char const* notif_pipe_path, int* client_notif_pipe_fd) {
+  int length_con_buffer = 1 + (MAX_PIPE_PATH_LENGTH + 1) * 3;
+  char connection_buffer[length_con_buffer];
   char *cur_buffer_pos;
   int server_pipe_fd;
 
@@ -32,23 +34,17 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
   }
 
   if (mkfifo(resp_pipe_path, 0666) < 0){
-    unlink(req_pipe_path);
     perror("Couldn't create response pipe.");
     return 1;
   }
 
-  if (mkfifo(notif_pipe_path, 0666) < 0){
-    unlink(req_pipe_path);
-    unlink(resp_pipe_path);
-    perror("Couldn't create notifications pipe.");
-    return 1;
-  }
+  // if (mkfifo(notif_pipe_path, 0666) < 0){
+  //   perror("Couldn't create notifications pipe.");
+  //   return 1;
+  // }
 
   if ((server_pipe_fd = open(server_pipe_path, O_WRONLY)) < 0){
     perror("Couldn't open server pipe.");
-    unlink(req_pipe_path);
-    unlink(resp_pipe_path);
-    unlink(notif_pipe_path);
     return 1;
   }
 
@@ -67,11 +63,8 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
   strncpy(api_notif_pipe_path, notif_pipe_path, MAX_PIPE_PATH_LENGTH + 1);
   strncpy(cur_buffer_pos, notif_pipe_path, MAX_PIPE_PATH_LENGTH + 1);
 
-  if (write_all(server_pipe_fd, connection_buffer, 1 + (MAX_PIPE_PATH_LENGTH + 1) * 3) < 0){
+  if (write_all(server_pipe_fd, connection_buffer, length_con_buffer) < 0){
     close(server_pipe_fd);
-    unlink(req_pipe_path);
-    unlink(resp_pipe_path);
-    unlink(notif_pipe_path);
     return 1;
   }
 
@@ -79,28 +72,19 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
 
   if ((api_req_pipe_fd = open(req_pipe_path, O_WRONLY)) < 0){
     perror("Couldn't open client request pipe.");
-    unlink(req_pipe_path);
-    unlink(resp_pipe_path);
-    unlink(notif_pipe_path);
     return 1;
   }
 
   if ((api_resp_pipe_fd = open(resp_pipe_path, O_RDONLY)) < 0){ //ver se n bloqueia e se tem de ser rdwr
     perror("Couldn't open client response pipe.");
     close(api_req_pipe_fd);
-    unlink(req_pipe_path);
-    unlink(resp_pipe_path);
-    unlink(notif_pipe_path);
     return 1;
   }
 
-  if ((api_notif_pipe_fd = open(notif_pipe_path, O_RDONLY)) < 0){ //ver se n bloqueia e se tem de ser rdwr
+  if ((*client_notif_pipe_fd = open(notif_pipe_path, O_RDONLY)) < 0){ //ver se n bloqueia e se tem de ser rdwr
     perror("Couldn't open client notification pipe.");
     close(api_req_pipe_fd);
     close(api_resp_pipe_fd);
-    unlink(req_pipe_path);
-    unlink(resp_pipe_path);
-    unlink(notif_pipe_path);
     return 1;
   }
 
@@ -108,22 +92,20 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
     perror("Couldn't read message from server.");
     close(api_req_pipe_fd);
     close(api_resp_pipe_fd);
-    unlink(req_pipe_path);
-    unlink(resp_pipe_path);
-    unlink(notif_pipe_path);
+    close(*client_notif_pipe_fd);
+    return 1;
   }
 
-  if(response_buffer[1] == '1'){
+  if(response_buffer[1] != '0'){
     perror("Couldn't connect to server.");
     close(api_req_pipe_fd);
     close(api_resp_pipe_fd);
-    unlink(req_pipe_path);
-    unlink(resp_pipe_path);
-    unlink(notif_pipe_path);
-    return 0;
+    close(*client_notif_pipe_fd);
   }
 
-  return 0;
+  fprintf(stdout, "Server returned %c for operation: connect", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
+
+  return (response_buffer[1] == '0') ? 0 : 1;
 }
 
 // close pipes and unlink pipe files
@@ -133,12 +115,11 @@ int kvs_disconnect(void) {
 
   if (write_all(api_req_pipe_fd, OP_CODE_DISCONNECT, 1) < 0)
     return 1;
+  /////////////////////////////////////////////// FALTA READ ??????????????????????????????????????????????????????????????????????????????????????
   close(api_req_pipe_fd);
   close(api_resp_pipe_fd);
-  close(api_notif_pipe_fd);
   unlink(api_req_pipe_path);
   unlink(api_resp_pipe_path);
-  unlink(api_notif_pipe_path);
   return 0;
 }
 
