@@ -7,13 +7,17 @@
 #include "../common/io.h"
 #include "../common/safeFunctions.h"
 
+
+// Node of the Binary Search Tree (BST)
 typedef struct BSTNode {
     int key;
     int fd;
-    struct BSTNode *left;
-    struct BSTNode *right;
+    struct BSTNode *left;   // Pointer to the left child node
+    struct BSTNode *right;  // Pointer to the right child node
 } BSTNode;
 
+
+// Binary Search Tree (BST) structure
 typedef struct BST {
     BSTNode *root;
     pthread_rwlock_t rwl;
