@@ -10,8 +10,33 @@
 #include "src/common/constants.h"
 #include "src/common/io.h"
 
+int client_notifications_fd;
+
 void notif_function(void *args){
-  
+
+  ssize_t bytes_read;
+  char buffer[MAX_STRING_SIZE * 2 + 4];
+  int interrupted_read;
+
+  while(1){
+
+    bytes_read = read_all(client_notifications_fd, buffer, (MAX_STRING_SIZE * 2 + 4)*sizeof(char), interrupted_read)
+
+     if (bytes_read > 0) {
+        buffer[bytes_read] = '\0'; // Null-terminate the string
+        if (write_all(1, buffer, strlen(buffer)) == -1) { ////////////////////////////// verificar
+          perror("Error writing notifications to stdout");
+        }
+      }else if (bytes_read == 0) {
+        break; // End of file or notification pipe closed
+      }else {
+        perror("Error reading from notification pipe");
+        break;
+      }
+    }
+
+    close(notif_fd); // Close the notification file descriptor when done
+    return NULL;
 }
 
 
@@ -37,9 +62,7 @@ int main(int argc, char* argv[]) {
 
   // TODO open pipes
 
-  int client_notifications_fd;
-
-  if (kvs_connect(req_pipe_path, resp_pipe_path, notif_pipe_path, &client_notifications_fd) != 0) {
+  if (kvs_connect(req_pipe_path, resp_pipe_path, argv[2], notif_pipe_path, &client_notifications_fd) != 0) {
     return 1;
   }
 

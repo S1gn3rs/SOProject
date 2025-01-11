@@ -6,11 +6,14 @@
 #include <stddef.h>
 #include <pthread.h>
 
+#include "avl.h"
+
 /// Node of the linked list.
 typedef struct KeyNode {
     char *key; // Key of the pair.
     char *value; // Value of the pair.
     struct KeyNode *next; // Pointer to the next node.
+    struct AVL *avl_notif_fds; // AVL tree for client's notification fd.
 } KeyNode;
 
 /// List of key value pairs.

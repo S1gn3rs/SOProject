@@ -75,13 +75,13 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
     return 1;
   }
 
-  if ((api_resp_pipe_fd = open(resp_pipe_path, O_RDONLY)) < 0){ //ver se n bloqueia e se tem de ser rdwr
+  if ((api_resp_pipe_fd = open(resp_pipe_path, O_RDONLY)) < 0){ //ver se n bloqueia e se tem de ser rdwr///////////////////////////
     perror("Couldn't open client response pipe.");
     close(api_req_pipe_fd);
     return 1;
   }
 
-  if ((*client_notif_pipe_fd = open(notif_pipe_path, O_RDONLY)) < 0){ //ver se n bloqueia e se tem de ser rdwr
+  if ((*client_notif_pipe_fd = open(notif_pipe_path, O_RDONLY)) < 0){ //ver se n bloqueia e se tem de ser rdwr////////////////////////7
     perror("Couldn't open client notification pipe.");
     close(api_req_pipe_fd);
     close(api_resp_pipe_fd);
@@ -116,6 +116,16 @@ int kvs_disconnect(void) {
   if (write_all(api_req_pipe_fd, OP_CODE_DISCONNECT, 1) < 0)
     return 1;
   /////////////////////////////////////////////// FALTA READ ??????????????????????????????????????????????????????????????????????????????????????
+
+  if (read_all(api_resp_pipe_fd, response_buffer, 2, &interrupted_read) < 0){
+    perror("Couldn't read message from server.");
+    return 1;
+  }
+
+  fprintf(stdout, "Server returned %c for operation: disconnect", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
+
+  if(response_buffer[1] != '0') return 1;
+
   close(api_req_pipe_fd);
   close(api_resp_pipe_fd);
   unlink(api_req_pipe_path);

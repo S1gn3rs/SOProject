@@ -26,6 +26,12 @@ typedef struct JobThreadArgs {
   size_t dir_length;        // Directory name length.
 }JobThreadArgs;
 
+typedef struct SubscribedKey {
+
+  char key_name[MAX_STRING_SIZE];
+
+}
+
 
 //Clients struct
 typedef struct ClientData {
@@ -347,6 +353,8 @@ void *client_thread(void *args) {
 
         case OP_CODE_DISCONNECT:
 
+          kvs_disconnect();
+
           close(req_pipe_fd);
           close(resp_pipe_fd);
           free(client);
@@ -354,11 +362,11 @@ void *client_thread(void *args) {
           break;
 
         case OP_CODE_SUBSCRIBE:
-
+          kvs_subscribe();
           break;
 
         case OP_CODE_UNSUBSCRIBE:
-
+          kvs_unsubscribe();
           break;
 
       }

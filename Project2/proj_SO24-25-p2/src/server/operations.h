@@ -50,6 +50,12 @@ int kvs_show(int fd);
 /// @return 0 if the backup was successful, -1 otherwise.
 int kvs_backup(int fd);
 
+int kvs_disconnect();
+
+int kvs_subscribe();
+
+int kvs unsubscribe();
+
 
 /// Waits for the last backup to be called.
 void kvs_wait_backup();

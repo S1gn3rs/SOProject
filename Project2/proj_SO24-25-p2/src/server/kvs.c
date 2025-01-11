@@ -99,6 +99,13 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
         free(new_key_node);
         return -1;
     }
+
+    new_key_node->avl_notif_fds = create_avl();
+    if(new_key_node->avl_notif_fds == NULL) {
+        free(new_key_node->value);
+        free(new_key_node->key);
+        free(new_key_node);
+    }
     // Insert the new key node at the beginning of the list
     new_key_node->next = (index_list->head != NULL)? index_list->head : NULL;
     index_list->head = new_key_node;
@@ -146,6 +153,7 @@ int delete_pair(HashTable *ht, const char *key) {
                 // Link the previous node to the next node
                 prevNode->next = key_node->next;
             }
+            free_avl(key_node->avl_notif_fds);
             free(key_node->key);
             free(key_node->value);
             free(key_node);
@@ -170,6 +178,7 @@ void free_table(HashTable *ht) {
         while (key_node != NULL) {
             KeyNode *temp = key_node;
             key_node = key_node->next;
+            free(temp->avl_notif_fds);
             free(temp->key);
             free(temp->value);
             free(temp);

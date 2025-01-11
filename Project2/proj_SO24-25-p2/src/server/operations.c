@@ -417,6 +417,23 @@ int kvs_backup(int fd) {
   return 0;
 }
 
+int kvs_disconnect(){
+
+  
+}
+
+
+int kvs_subscribe(){
+
+
+}
+
+
+int kvs_unsubscribe(){
+
+
+}
+
 
 void kvs_wait(unsigned int delay_ms) {
   struct timespec delay = delay_to_timespec(delay_ms);
