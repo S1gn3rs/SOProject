@@ -38,26 +38,25 @@ BST *create_bst() {
 
 
 int bst_add(BST *bst, int key, int fd) {
-    BSTNode **current;
+    BSTNode **current; // Double pointer to be able to traverse and modify the tree.
 
     if (!bst || pthread_rwlock_wrlock_error_check(&bst->rwl, NULL) < 0) return -1;
 
-    current = &bst->root;
-    while (*current) {
-        if (key < (*current)->key) {
+    current = &bst->root; // Start at the root of the tree
+    while (*current) {  // Traverse the tree
+        if (key < (*current)->key) { // Move to the left node
             current = &(*current)->left;
 
-        } else if (key > (*current)->key) {
+        } else if (key > (*current)->key) { // Move to the right node
             current = &(*current)->right;
 
         } else {
-            (*current)->fd = fd; //If fd already exists change file descriptor to the new one.-----------------------------------------------------------------------
             pthread_rwlock_unlock(&bst->rwl);
-            return 0;
+            return -1; // That key already exists inside of the bst
         }
     }
-
     *current = create_node(key, fd);
+
     if (!*current) {
         pthread_rwlock_unlock(&bst->rwl);
         return -1; // Could'n allocate memory.
@@ -90,6 +89,62 @@ int has_notif(BST *bst, int key, int *fd) {
 
     pthread_rwlock_unlock(&bst->rwl);
     return -1; // not found
+}
+
+
+/**
+ * Removes a node from the BST by key.
+ *
+ * @param bst The BST from which the node will be removed.
+ * @param key The key of the node to be removed.
+ *
+ * @return 0 if the node was removed successfully, -1 otherwise.
+ */
+int bst_remove(BST *bst, int key) {
+    BSTNode **current, *node_to_remove, *replacement_node;
+
+    if (!bst || pthread_rwlock_wrlock_error_check(&bst->rwl, NULL) < 0) return -1;
+
+    current = &bst->root;
+    while (*current) {
+        if (key < (*current)->key) {
+            current = &(*current)->left;
+
+        } else if (key > (*current)->key) {
+            current = &(*current)->right;
+
+        } else {
+            node_to_remove = *current;  // Node to be removed found
+
+            if (!node_to_remove->left) { // Has no left node, replace with right node
+                *current = node_to_remove->right;
+            } else if (!node_to_remove->right) {
+                *current = node_to_remove->left; // Has no right node, replace with left node
+
+            } else {    // Has both nodes, find the in-order successor
+                BSTNode **replacement_parent;
+                replacement_node = node_to_remove->right;
+                replacement_parent = &node_to_remove->right;
+
+                while (replacement_node->left) {
+                    replacement_parent = &replacement_node->left;
+                    replacement_node = replacement_node->left;
+                }
+                // Replace node_to_remove with replacement_node
+                *replacement_parent = replacement_node->right;
+                replacement_node->left = node_to_remove->left;
+                replacement_node->right = node_to_remove->right;
+                *current = replacement_node;
+            }
+
+            free(node_to_remove);
+            pthread_rwlock_unlock(&bst->rwl);
+            return 0; // Node removed successfully
+        }
+    }
+
+    pthread_rwlock_unlock(&bst->rwl);
+    return -1; // Node not found
 }
 
 
