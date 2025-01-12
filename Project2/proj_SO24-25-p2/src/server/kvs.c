@@ -6,6 +6,8 @@
 #include <ctype.h>
 #include <unistd.h>
 
+#include "../common/constants.h"
+
 
 /// Hash function based on key initial.
 /// @param key Lowercase alphabetical string.
@@ -150,6 +152,36 @@ int delete_pair(HashTable *ht, const char *key) {
         }
         prevNode = key_node;        // Move prevNode to current node
         key_node = key_node->next;  // Move to the next node
+    }
+    return -1;
+}
+
+int subscribe_pair(HashTable *ht, char key[MAX_STRING_SIZE + 1], int client_id, int notif_fd){
+    int index = hash(key);
+    IndexList *index_list = ht->table[index];
+    KeyNode *key_node = index_list->head;
+    // Search for the key node
+    while (key_node != NULL) {
+        // If the key is found, update the value
+        if (strcmp(key_node->key, key) == 0) {
+            
+        }
+        key_node = key_node->next; // Move to the next node
+    }
+    return -1;
+}
+
+int unsubscribe_pair(HashTable *ht, char key[MAX_STRING_SIZE + 1], int client_id, int notif_fd){
+    int index = hash(key);
+    IndexList *index_list = ht->table[index];
+    KeyNode *key_node = index_list->head;
+    // Search for the key node
+    while (key_node != NULL) {
+        // If the key is found, update the value
+        if (strcmp(key_node->key, key) == 0) {
+            
+        }
+        key_node = key_node->next; // Move to the next node
     }
     return -1;
 }
