@@ -7,15 +7,49 @@
 #include "../common/io.h"
 #include "../common/safeFunctions.h"
 
+typedef enum KeyType {
+    KEY_INT,
+    KEY_STRING
+} KeyType;
 
-// Node of the AVL tree.
+
+// // Node of the AVL tree.
+// typedef struct AVLNode {
+//     int key;
+//     int fd;
+//     struct AVLNode *left;   // Pointer to the left child node
+//     struct AVLNode *right;  // Pointer to the right child node
+//     int height;             // Height of the node
+// } AVLNode;
+
+// typedef struct AVLNode {
+//     KeyType key_type;        // Indicates if the key is int or string
+//     union {
+//         int int_key;         // Integer key
+//         char *str_key;       // String key
+//     } key;
+//     int fd;                  // Associated file descriptor
+//     struct AVLNode *left;    // Pointer to the left node
+//     struct AVLNode *right;   // Pointer to the right  node
+//     int height;              // Height of the node
+// } AVLNode;
+
 typedef struct AVLNode {
-    int key;
-    int fd;
-    struct AVLNode *left;   // Pointer to the left child node
-    struct AVLNode *right;  // Pointer to the right child node
-    int height;             // Height of the node
+    KeyType key_type;        // Indicates if the key is int or string
+    union {
+        struct {
+            int int_key;     // Integer key
+            int fd;          // File descriptor (only for int_key)
+        };
+        char *str_key;       // String key
+    } key;
+    struct AVLNode *left;    // Pointer to the left node
+    struct AVLNode *right;   // Pointer to the right node
+    int height;              // Height of the node
 } AVLNode;
+
+
+
 
 
 // AVL tree structure

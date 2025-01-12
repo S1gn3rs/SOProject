@@ -12,7 +12,8 @@
 
 #include "constants.h"
 #include "parser.h"
-#include "operations.h"//Clients struct
+#include "operations.h"
+#include "avl.h"
 #include "../common/constants.h"
 #include "../common/protocol.h"
 #include "../common/safeFunctions.h"
@@ -26,19 +27,16 @@ typedef struct JobThreadArgs {
   size_t dir_length;        // Directory name length.
 }JobThreadArgs;
 
-typedef struct SubscribedKey {
-
-  char key_name[MAX_STRING_SIZE];
-
-}
-
 
 //Clients struct
-typedef struct ClientData {
+typedef struct ClientData { // Unlock the hash table's index list that have been locked
+  for (size_t ind = 0; ind < 26; ind++)
+    if (is_locked[ind]) hash_table_list_unlock(ind);
   char req_pipe_path[MAX_PIPE_PATH_LENGTH];   // Request pipe path.
   char resp_pipe_path[MAX_PIPE_PATH_LENGTH];  // Response pipe path.
   char notif_pipe_path[MAX_PIPE_PATH_LENGTH]; // Notification pipe path.////////////////////////////////////////////////////77777
-  char subscribed_keys[MAX_STRING_SIZE][MAX_NUMBER_SUB]; //////////////////////////////////////////////worth dinamico
+  struct AVL *subscribed_keys;
+  int subscribed_count;
   int session_id;
 }ClientData;
 
@@ -327,6 +325,12 @@ void *client_thread(void *args) {
       return NULL;
     }
 
+    int notif_pipe_fd = open(client->data.notif_pipe_path, O_WRONLY);
+    if (notif_pipe_fd == -1){
+      perror("Error opening client notification pipe");
+      return NULL;
+    }
+
     response_connection[1] = '0';
 
     if (write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1) { ////////////////////////////// verificar
@@ -338,8 +342,10 @@ void *client_thread(void *args) {
     while(client_connected){
 
       char op_code;
+      int session_id = client->data.session_id;
       int interrupted_read;
       int read_output;
+      char key[MAX_STRING_SIZE + 1];
 
       if ((read_output = read_all(req_pipe_fd, op_code, sizeof(char), interrupted_read)) < 0){
         perror("Couldn't read message from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
@@ -362,11 +368,25 @@ void *client_thread(void *args) {
           break;
 
         case OP_CODE_SUBSCRIBE:
-          kvs_subscribe();
+          if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, interrupted_read)) < 0){
+            perror("Couldn't read key from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
+            break;
+          }else if(read_output == 0){
+            perror("Got EOF while trying to read key from client.");
+            break;
+          }
+          kvs_subscribe(session_id, notif_pipe_fd, key);
           break;
 
         case OP_CODE_UNSUBSCRIBE:
-          kvs_unsubscribe();
+          if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, interrupted_read)) < 0){
+            perror("Couldn't read key from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
+            break;
+          }else if(read_output == 0){
+            perror("Got EOF while trying to read key from client.");
+            break;
+          }
+          kvs_unsubscribe(session_id, notif_pipe_fd, key);
           break;
 
       }
@@ -495,7 +515,7 @@ int main(int argc, char *argv[]) {
 
   for(int thread_count = 0; thread_count < MAX_SESSION_COUNT; thread_count++){
     if (pthread_create(&client_threads[thread_count], NULL, client_thread,\
-    (void *)args) != 0){
+    NULL) != 0){
 
       fprintf(stderr, "Error: Unable to create client thread %d.\n", thread_count);
       client_threads_error[thread_count] = 1;
@@ -542,9 +562,16 @@ int main(int argc, char *argv[]) {
     }
 
     client->next = NULL;
-    client->data.session_id = idClient;
-    aux_client_conn = client_connection + 1;
     data = &client->data;
+    data->session_id = idClient;
+    data->subscribed_count = 0;
+    data->subscribed_keys = create_avl();
+    if (data->subscribed_keys == NULL){
+      perror("could not create an AVL for subscribed keys.");
+      continue;
+    }
+
+    aux_client_conn = client_connection + 1;
     safe_strncpy(data->req_pipe_path, aux_client_conn, MAX_PIPE_PATH_LENGTH + 1);
 
     aux_client_conn += MAX_PIPE_PATH_LENGTH + 1;
@@ -566,7 +593,7 @@ int main(int argc, char *argv[]) {
 
     sem_post(&sem_remove_from_queue); // Let a thread get one client from the queue.
 
-  idClient++;
+    idClient++;
   }
 
 

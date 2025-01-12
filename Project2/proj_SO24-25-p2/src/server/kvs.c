@@ -7,18 +7,6 @@
 #include <unistd.h>
 
 
-/// Tries to duplicate a string and checks for errors.
-/// @param bufferToCopy string to be duplicated.
-/// @return a new duplicated string in success or null pointer otherwise.
-char* strdup_error_check(const char * bufferToCopy){
-    char * new_buffer = strdup(bufferToCopy);
-    if (new_buffer == NULL){
-      fprintf(stderr, "Error trying to duplicate string.\n");
-    }
-    return new_buffer;
-}
-
-
 /// Hash function based on key initial.
 /// @param key Lowercase alphabetical string.
 /// @return hash.

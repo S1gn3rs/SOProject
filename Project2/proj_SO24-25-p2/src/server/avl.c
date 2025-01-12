@@ -2,20 +2,34 @@
 
 
 /**
- * Creates a new node for the AVL tree.
+ * Creates a new AVL node.
  *
- * @param key The key to be stored in the node.
- * @param fd The file descriptor associated with the key.
- *
- * @return A pointer to the newly created node, or NULL on failure.
+ * @param key_type The type of the key (KEY_INT or KEY_STRING).
+ * @param key The key value (int or string).
+ * @param fd The file descriptor (only for (int) key, use -1 if not applicable).
+ * @return A pointer to the newly created AVL node.
  */
-AVLNode *create_node(int key, int fd) {
+AVLNode *create_node(KeyType key_type, void* key, int fd) {
     AVLNode *node = malloc(sizeof(AVLNode));
 
     if (!node) return NULL;
 
-    node->key = key;
-    node->fd = fd;
+    node->key_type = key_type;
+    if (key_type == KEY_INT && fd != -1) {
+        node->key.int_key = *(int *)key;
+        node->key.fd = fd;
+    }
+    else if(key_type == KEY_STRING){
+        node->key.str_key = strdup((char *)key);
+        if (!node->key.str_key){ // Handle memory allocation failure
+            free(node);
+            return NULL;
+        }
+    }
+    else {
+        free(node);
+        return NULL;
+    }
     node->left = NULL;
     node->right = NULL;
     node->height = 1; // New node is initially added at leaf
@@ -45,6 +59,27 @@ int height(AVLNode *node) {
  */
 int max(int a, int b) {
     return (a > b) ? a : b;
+}
+
+
+/**
+ * Compares two keys of type KeyType.
+ *
+ * @param key_type The type of the keys (KEY_INT or KEY_STRING).
+ * @param key1 The first key to compare.
+ * @param key2 The second key to compare.
+ * @return A negative value if key1 is less than key2,
+ *         0 if key1 is equal to key2,
+ *         a positive value if key1 is greater than key2.
+ */
+int compare_keys(KeyType key_type, void *key1, void *key2) {
+    if (key_type == KEY_INT) {
+        return (*(int *)key1 - *(int *)key2);
+    }
+    else if (key_type == KEY_STRING) {
+        return strcmp((char *)key1, (char *)key2);
+    }
+    return 0; // Should never reach here
 }
 
 
@@ -142,6 +177,7 @@ AVLNode *balance_node(AVLNode *node) {
     return node;
 }
 
+
 /**
  * Finds the node with the minimum key value in the subtree.
  *
@@ -161,30 +197,36 @@ AVLNode *min_value_node(AVLNode *node) {
 /**
  * Inserts a key-fd pair into the AVL tree.
  *
- * @param node The root of the subtree where the key-fd pair will be inserted.
+ * @param root The root of the subtree where the key-fd pair will be inserted.
  * @param key The key to be inserted.
- * @param fd The file descriptor associated with the key.
+ * @param fd The file descriptor (only for (int) key, use -1 if not applicable).
  *
  * @return The new root of the subtree after insertion.
  */
-AVLNode *insert_node(AVLNode *node, int key, int fd) {
-    int balance;
+AVLNode *insert_node(AVLNode *root, void* key, int fd) {
+    int balance, comparation = 0;
 
-    if (node == NULL) // No more operations are needed.
-        return create_node(key, fd);
+    if (root == NULL) // No more operations are needed.
+        return create_node(root->key_type, key, fd);
 
-    if (key < node->key)
-        node->left = insert_node(node->left, key, fd);
+    if (root->key_type == KEY_INT)
+        comparation = compare_keys(root->key_type, key, &root->key.int_key);
 
-    else if (key > node->key)
-        node->right = insert_node(node->right, key, fd);
+    else if (root->key_type == KEY_STRING)
+        comparation = compare_keys(root->key_type, key, root->key.str_key);
+
+    if (comparation < 0)
+        root->left = insert_node(root->left, key, fd);
+
+    else if (comparation > 0)
+        root->right = insert_node(root->right, key, fd);
 
     else
-        return node; // Duplicate keys won't result in anything.
+        return root; // Duplicate keys won't result in anything.
 
-    node->height = 1 + max(height(node->left), height(node->right));
+    root->height = 1 + max(height(root->left), height(root->right));
 
-    return balance_node(node); // In order for the tree to stay balanced.
+    return balance_node(root); // In order for the tree to stay balanced.
 }
 
 
@@ -196,15 +238,20 @@ AVLNode *insert_node(AVLNode *node, int key, int fd) {
  *
  * @return The new root of the subtree after removal.
  */
-AVLNode *remove_node(AVLNode *root, int key) {
+AVLNode *remove_node(AVLNode *root, void* key) {
+    int comparation = 0;
+
     if (root == NULL) return root;
 
-    if (key < root->key) {
+    if (root->key_type == KEY_INT)
+        comparation = compare_keys(root->key_type, key, &root->key.int_key);
+    else if (root->key_type == KEY_STRING)
+        comparation = compare_keys(root->key_type, key, root->key.str_key);
+
+    if (comparation < 0)
         root->left = remove_node(root->left, key);
-    }
-    else if (key > root->key) {
+    else if (comparation > 0)
         root->right = remove_node(root->right, key);
-    }
     else { // found node to be removed
         if ((root->left == NULL) || (root->right == NULL)) {
             AVLNode *temp = root->left ? root->left : root->right;
@@ -213,16 +260,43 @@ AVLNode *remove_node(AVLNode *root, int key) {
                 temp = root;    // so this node is a leaf.
                 root = NULL;
             }
-            else *root = *temp; // New root is the left/right node.
+            else{ // 1 (left or right) isn't null.
+                if (root->key_type == KEY_STRING && root->key.str_key)
+                        free(root->key.str_key);
 
+                *root = *temp; // New root is the left/right node.
+                if (root->key_type == KEY_STRING && temp->key.str_key)
+                    root->key.str_key = strdup_error_check(temp->key.str_key);
+            }
+
+            if (temp->key_type == KEY_STRING && temp->key.str_key) {
+                free(temp->key.str_key); // Free the string key in the temp node
+            }
             free(temp);
         }
         else {  // In case both left and right nodes exist.
             AVLNode *temp = min_value_node(root->right);
-            // Put right min value as root and then removes it previous node.
-            root->key = temp->key;
-            root->fd = temp->fd;
-            root->right = remove_node(root->right, temp->key);
+
+
+            // Free the current node's string key, if applicable
+            if (root->key_type == KEY_STRING && root->key.str_key) {
+                free(root->key.str_key);
+            }
+
+            // Copy the key and fd from the temp node to the current node
+            if (temp->key_type == KEY_STRING && temp->key.str_key) {
+                root->key.str_key = strdup_error_check(temp->key.str_key);
+            }
+            else {
+                root->key.int_key = temp->key.int_key; // Copy integer key
+                root->key.fd = temp->key.fd;           // Copy file descriptor
+            }
+
+            // Remove the minimum node from the right subtree
+            if (temp->key_type == KEY_STRING)
+                root->right = remove_node(root->right, temp->key.str_key);
+            else if (temp->key_type == KEY_INT)
+                root->right = remove_node(root->right, temp->key.int_key);
         }
     }
 
@@ -271,21 +345,28 @@ int avl_remove(AVL *avl, int key) {
 }
 
 
-int has_fd(AVL *avl, int key, int *fd) {
+int has_fd(AVL *avl, void* key, int *fd) {
     AVLNode *current;
+    int comparation;
 
     if(pthread_rwlock_rdlock_error_check(&avl->rwl, NULL) < 0) return -1;
     current = avl->root;
 
+    if (avl->root->key_type != KEY_INT){
+        pthread_rwlock_unlock(&avl->rwl);
+        return -1;
+    }
+
     while (current) {
-        if (key < current->key) {
+        comparation = compare_keys(KEY_INT, key, &current->key.int_key);
+        if (comparation < 0) {
             current = current->left;
 
-        } else if (key > current->key) {
+        } else if (comparation > 0) {
             current = current->right;
 
         } else {
-            *fd = current->fd;
+            *fd = current->key.fd;
             pthread_rwlock_unlock(&avl->rwl);
             return 0; // found
         }
@@ -312,7 +393,7 @@ int send_to_all_fds_recursive(AVLNode *node, const char *message, size_t size) {
         // send to left sub-tree
         gotError += send_to_all_fds_recursive(node->left, message, size);
         // send to current fd, write returns 1 on success, so we subtract
-        gotError += 1 - write_all(node->fd, message, size);
+        gotError += 1 - write_all(node->key.fd, message, size);
         // send to right sub-tree
         gotError += send_to_all_fds_recursive(node->right, message, size);
 
@@ -326,12 +407,14 @@ int send_to_all_fds(AVL *avl, const char *message, size_t size) {
     int gotError = 0; // Incremented when a message couldn't be sent to a fd.
 
     if(pthread_rwlock_rdlock_error_check(&avl->rwl, NULL) < 0) return -1;
+    if (avl->root->key_type != KEY_INT) return -1;
 
     gotError = send_to_all_fds_recursive(avl->root, message, size);
 
     pthread_rwlock_unlock(&avl->rwl);
     return (gotError) ? -1 : 0;
 }
+
 
 /**
  * Frees all nodes in the AVL tree.
@@ -342,6 +425,10 @@ void free_avl_node(AVLNode *node) {
     if (node) {
         free_avl_node(node->left);
         free_avl_node(node->right);
+
+        if (node->key_type == KEY_STRING)
+            free(node->key.str_key);
+
         free(node);
     }
 }

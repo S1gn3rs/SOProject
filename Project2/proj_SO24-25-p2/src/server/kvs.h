@@ -7,6 +7,8 @@
 #include <pthread.h>
 
 #include "avl.h"
+#include "../common/safeFunctions.h"
+
 
 /// Node of the linked list.
 typedef struct KeyNode {

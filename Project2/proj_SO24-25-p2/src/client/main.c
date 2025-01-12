@@ -14,29 +14,43 @@ int client_notifications_fd;
 
 void notif_function(void *args){
 
-  ssize_t bytes_read;
-  char buffer[MAX_STRING_SIZE * 2 + 4];
+  ssize_t bytes_read1, bytes_read2;
+  char key[MAX_STRING_SIZE + 1];
+  char value[MAX_STRING_SIZE + 1];
+  char message[MAX_STRING_SIZE * 2 + 5];
   int interrupted_read;
 
-  while(1){
+  while (1) {
 
-    bytes_read = read_all(client_notifications_fd, buffer, (MAX_STRING_SIZE * 2 + 4)*sizeof(char), interrupted_read)
-
-     if (bytes_read > 0) {
-        buffer[bytes_read] = '\0'; // Null-terminate the string
-        if (write_all(1, buffer, strlen(buffer)) == -1) { ////////////////////////////// verificar
-          perror("Error writing notifications to stdout");
-        }
-      }else if (bytes_read == 0) {
-        break; // End of file or notification pipe closed
-      }else {
-        perror("Error reading from notification pipe");
-        break;
+    bytes_read1 = read_all(client_notifications_fd, key, MAX_STRING_SIZE, &interrupted_read);
+    if (bytes_read1 <= 0) {
+      if (bytes_read1 == 0) {
+        break; // End of file or pipe closed
       }
+      perror("Error reading key from notification pipe");
+      break;
     }
+    key[bytes_read1] = '\0';
 
-    close(notif_fd); // Close the notification file descriptor when done
-    return NULL;
+    bytes_read2 = read_all(client_notifications_fd, value, MAX_STRING_SIZE, &interrupted_read);
+    if (bytes_read2 <= 0) {
+      if (bytes_read2 == 0) {
+        break; // End of file or pipe closed
+      }
+      perror("Error reading value from notification pipe");
+      break;
+    }
+    value[bytes_read2] = '\0';
+
+    snprintf(message, sizeof(message), "(%s,%s)\n", key, value);
+
+    if (write_all(stdout, message, strlen(message)) == -1) {
+      perror("Error writing notifications to stdout");
+    }
+  }
+
+  close(client_notifications_fd); // Close the notification file descriptor when done
+  return NULL;
 }
 
 
@@ -67,7 +81,7 @@ int main(int argc, char* argv[]) {
   }
 
   if (pthread_create(&notif_thread, NULL, notif_function,
-    (void *)args) != 0){
+    NULL) != 0){
 
     fprintf(stderr, "Error: Unable to create notifications thread \n");
   }
@@ -81,8 +95,9 @@ int main(int argc, char* argv[]) {
         }
         // TODO: end notifications thread
         if (pthread_join(notif_thread, NULL) != 0) {
-          fprintf(stderr, "Error: Unable to join job thread %d.\n", i);
+          fprintf(stderr, "Error: Unable to join notifications thread.\n");
         }
+        unlink(notif_pipe_path);
         printf("Disconnected from server\n");
         return 0;
 
@@ -92,7 +107,7 @@ int main(int argc, char* argv[]) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
           continue;
         }
-         
+
         if (kvs_subscribe(keys[0])) {
             fprintf(stderr, "Command subscribe failed\n");
         }
@@ -105,7 +120,7 @@ int main(int argc, char* argv[]) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
           continue;
         }
-         
+
         if (kvs_unsubscribe(keys[0])) {
             fprintf(stderr, "Command subscribe failed\n");
         }

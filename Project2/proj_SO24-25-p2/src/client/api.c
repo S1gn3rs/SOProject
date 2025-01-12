@@ -145,9 +145,16 @@ int kvs_subscribe(const char* key) {
 
   if (write_all(api_req_pipe_fd, subscribe_buffer, MAX_STRING_SIZE + 2) < 0)
     return 1;
-  return 0;
-}
 
+  if (read_all(api_resp_pipe_fd, response_buffer, 2, &interrupted_read) < 0){
+    perror("Couldn't read message from server.");
+    return 1;
+  }
+
+  fprintf(stdout, "Server returned %c for operation: subscribe", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
+
+  return (response_buffer[1] == '0') ? 0 : 1;
+}
 
 // send unsubscribe message to request pipe and wait for response in response pipe
 int kvs_unsubscribe(const char* key) {
@@ -158,9 +165,17 @@ int kvs_unsubscribe(const char* key) {
   *unsubscribe_buffer = OP_CODE_UNSUBSCRIBE;
   strncpy(unsubscribe_buffer + 1, key, MAX_STRING_SIZE + 1);
 
-  if (write_  (api_req_pipe_fd, unsubscribe_buffer, MAX_STRING_SIZE + 2) < 0)
+  if (write_all(api_req_pipe_fd, unsubscribe_buffer, MAX_STRING_SIZE + 2) < 0)
     return 1;
-  return 0;
+
+  if (read_all(api_resp_pipe_fd, response_buffer, 2, &interrupted_read) < 0){
+    perror("Couldn't read message from server.");
+    return 1;
+  }
+
+  fprintf(stdout, "Server returned %c for operation: unsubscribe", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
+
+  return (response_buffer[1] == '0') ? 0 : 1;
 }
 
 

@@ -29,3 +29,12 @@ int pthread_rwlock_wrlock_error_check(pthread_rwlock_t *rwlock, \
     }
     return 0;
 }
+
+
+char* strdup_error_check(const char * bufferToCopy){
+    char * new_buffer = strdup(bufferToCopy);
+    if (new_buffer == NULL){
+      fprintf(stderr, "Error trying to duplicate string.\n");
+    }
+    return new_buffer;
+}
