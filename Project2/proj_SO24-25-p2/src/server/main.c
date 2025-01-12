@@ -368,6 +368,8 @@ void *client_thread(void *args) {
           break;
 
         case OP_CODE_SUBSCRIBE:
+          response_connection[0] = OP_CODE_SUBSCRIBE;
+          response_connection[1] = '1';
           if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, interrupted_read)) < 0){
             perror("Couldn't read key from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
             break;
@@ -375,10 +377,17 @@ void *client_thread(void *args) {
             perror("Got EOF while trying to read key from client.");
             break;
           }
-          kvs_subscribe(session_id, notif_pipe_fd, key);
+          if(kvs_subscribe(session_id, notif_pipe_fd, key) == 0){
+            response_connection[1] = '0';
+          }
+          if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+            perror("Error writing OP_CODE and result to response pipe");
+          }
           break;
 
         case OP_CODE_UNSUBSCRIBE:
+          response_connection[0] = OP_CODE_UNSUBSCRIBE;
+          response_connection[1] = '1';
           if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, interrupted_read)) < 0){
             perror("Couldn't read key from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
             break;
@@ -386,7 +395,12 @@ void *client_thread(void *args) {
             perror("Got EOF while trying to read key from client.");
             break;
           }
-          kvs_unsubscribe(session_id, notif_pipe_fd, key);
+          if(kvs_unsubscribe(session_id, notif_pipe_fd, key) == 0){
+            response_connection[1] = '0';
+          }
+          if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+            perror("Error writing OP_CODE and result to response pipe");
+          }
           break;
 
       }
