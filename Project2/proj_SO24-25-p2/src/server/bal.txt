@@ -1,0 +1,2 @@
+Incorrect arguments.
+ Correct use: ./kvs    <jobs_directory> <concurrent_backups> <max_threads> <server_FIFO_name>

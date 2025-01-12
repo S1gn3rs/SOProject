@@ -302,8 +302,6 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
   char notif_message[MAX_STRING_SIZE * 2 + 2] = {0};
   char *aux_message;
 
-  ssize_t deleted_length = strlen("DELETED");
-
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
     return -1;
@@ -334,6 +332,7 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
     if (is_locked[indexList] == 0){
       // Lock the index list for writing
       if (hash_table_list_wrlock(indexList)) continue;
+
       is_locked[indexList] = 1;
     }
   }
@@ -347,7 +346,7 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
     aux_message += MAX_STRING_SIZE + 1;
     strncpy(aux_message, "DELETED", MAX_STRING_SIZE + 1);
 
-    if (delete_pair(kvs_table, keys[indexNodes], notif_message) != 0) {
+    if (delete_pair(kvs_table, avl_clients_node, keys[indexNodes], notif_message) != 0) {
       snprintf(buffer, MAX_WRITE_SIZE, "(%s,KVSMISSING)", keys[indexNodes]);
       if (!aux) {
         if (write_error_check(fd, "[") == -1){
@@ -453,7 +452,7 @@ int kvs_backup(int fd) {
 
 
 int kvs_remove_subscription(int client_id, char *key) {
-  size_t indexList = hash(key);
+  size_t indexList = (size_t) hash(key);
 
   if(hash_table_rdlock()) return -1;
 
@@ -472,7 +471,7 @@ int kvs_remove_subscription(int client_id, char *key) {
 
   while (key_node != NULL) {
     if (strcmp(key_node->key, key) == 0) {
-      avl_remove(key_node->avl_notif_fds, client_id);
+      avl_remove(key_node->avl_notif_fds, &client_id);
 
       hash_table_list_unlock(indexList);
       hash_table_unlock();
@@ -491,14 +490,22 @@ int kvs_disconnect(int client_id){
 
   AVL *avl = avl_clients_node[client_id];
 
-  if(apply_to_all_nodes(avl, kvs_remove_subscription, client_id) != 0) return -1;
+  if(apply_to_all_nodes(avl, kvs_remove_subscription, client_id) != 0){
+    printf("Failed applying to all nodes\n");
+    return -1;
+  }
 
+  if(clean_avl(avl) != 0){
+    printf("Failed cleaning avl\n");
+    return -1;
+  }
 
+  return 0;
 }
 
 
 int kvs_subscribe(int client_id, int notif_fd, char *key){
-  size_t indexList = hash(key);
+  size_t indexList = (size_t) hash(key);
 
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
@@ -526,8 +533,8 @@ int kvs_subscribe(int client_id, int notif_fd, char *key){
 }
 
 
-int kvs_unsubscribe(int client_id, int notif_fd, char *key){
-  size_t indexList = hash(key);
+int kvs_unsubscribe(int client_id, char *key){
+  size_t indexList = (size_t) hash(key);
 
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
@@ -541,7 +548,7 @@ int kvs_unsubscribe(int client_id, int notif_fd, char *key){
     return -1;
   }
 
-  if (unsubscribe_pair(kvs_table, key, client_id, notif_fd) != 0) {
+  if (unsubscribe_pair(kvs_table, key, client_id) != 0) {
     fprintf(stderr, "Failed to unsubscribe client %d to key %s.\n", client_id,\
     key);
     hash_table_list_unlock(indexList);

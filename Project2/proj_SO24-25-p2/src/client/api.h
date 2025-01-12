@@ -2,7 +2,16 @@
 #define CLIENT_API_H
 
 #include <stddef.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <string.h>
+
 #include "src/common/constants.h"
+#include "src/common/protocol.h"
+#include "src/common/io.h"
 
 /// Connects to a kvs server.
 /// @param req_pipe_path Path to the name pipe to be created for requests.

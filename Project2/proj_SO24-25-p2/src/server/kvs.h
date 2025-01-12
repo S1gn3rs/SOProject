@@ -6,8 +6,10 @@
 #include <stddef.h>
 #include <pthread.h>
 
+#include "constants.h"
 #include "avl.h"
 #include "../common/safeFunctions.h"
+
 
 
 /// Node of the linked list.
@@ -39,7 +41,7 @@ typedef struct HashTable {
 int hash(const char *key);
 
 
-/// Creates a new event hash table.
+/// Creates a new hash table.
 /// @return Newly created hash table, NULL on failure
 HashTable *create_hash_table();
 
@@ -54,18 +56,25 @@ int write_pair(HashTable *ht, const char *key, const char *value, const char *no
 
 
 /// Deletes the value of given key.
-/// @param ht Hash table to delete from.
-/// @param key Key of the pair to be deleted.
+/// @param ht Hash table to read from.
+/// @param key Key of the pair to read.
 /// @return 0 if the node was deleted successfully, -1 otherwise.
 char* read_pair(HashTable *ht, const char *key);
 
 
 /// Appends a new node to the list.
-/// @param list Event list to be modified.
-/// @param key Key of the pair to read.
+/// @param ht Hash table to delete from.
+/// @param avl_sessions List of all AVL tree subscritions for all clients
+/// @param key Key of the pair to be deleted.
 /// @param notif_message String to write to all fd stores inside the node.
 /// @return 0 if the node was appended successfully, -1 otherwise.
-int delete_pair(HashTable *ht, const char *key,  const char *notif_message);
+int delete_pair(HashTable *ht, AVL *avl_sessions[], const char *key,  const char *notif_message);
+
+
+int subscribe_pair(HashTable *ht, char key[MAX_STRING_SIZE + 1], int client_id, int notif_fd);
+
+
+int unsubscribe_pair(HashTable *ht, char key[MAX_STRING_SIZE + 1], int client_id);
 
 
 /// Frees the hashtable.

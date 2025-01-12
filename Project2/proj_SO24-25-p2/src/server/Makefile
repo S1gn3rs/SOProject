@@ -4,7 +4,7 @@ CC = gcc
 CFLAGS = -g -std=c17 -D_POSIX_C_SOURCE=200809L \
 		 -Wall -Werror -Wextra \
 		 -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-enum -Wundef -Wunreachable-code -Wunused -pthread \
-		 # -fsanitize=undefined -fsanitize=thread
+		 -fsanitize=undefined -fsanitize=thread
 
 ifneq ($(shell uname -s),Darwin) # if not MacOS
 	CFLAGS += -fmax-errors=5
@@ -12,8 +12,8 @@ endif
 
 all: kvs
 
-kvs: main.c constants.h operations.o parser.o kvs.o
-	$(CC) $(CFLAGS) $(SLEEP) -o kvs main.c operations.o parser.o kvs.o
+kvs: main.c constants.h operations.o parser.o kvs.o avl.o
+	$(CC) $(CFLAGS) $(SLEEP) -o kvs main.c operations.o parser.o kvs.o avl.o
 
 %.o: %.c %.h
 	$(CC) $(CFLAGS) -c ${@:.o=.c}

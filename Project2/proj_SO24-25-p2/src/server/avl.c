@@ -204,7 +204,7 @@ AVLNode *min_value_node(AVLNode *node) {
  * @return The new root of the subtree after insertion.
  */
 AVLNode *insert_node(AVLNode *root, void* key, int fd) {
-    int balance, comparation = 0;
+    int comparation = 0;
 
     if (root == NULL) // No more operations are needed.
         return create_node(root->key_type, key, fd);
@@ -296,7 +296,7 @@ AVLNode *remove_node(AVLNode *root, void* key) {
             if (temp->key_type == KEY_STRING)
                 root->right = remove_node(root->right, temp->key.str_key);
             else if (temp->key_type == KEY_INT)
-                root->right = remove_node(root->right, temp->key.int_key);
+                root->right = remove_node(root->right, &temp->key.int_key);
         }
     }
 
@@ -319,6 +319,7 @@ AVL *create_avl() {
         return NULL;
     }
 
+    printf("AVL created\n");
     return avl;
 }
 
@@ -405,13 +406,21 @@ int send_to_all_fds_recursive(AVLNode *node, const char *message, size_t size) {
 
 int send_to_all_fds(AVL *avl, const char *message, size_t size) {
     int gotError = 0; // Incremented when a message couldn't be sent to a fd.
-
     if(pthread_rwlock_rdlock_error_check(&avl->rwl, NULL) < 0) return -1;
-    if (avl->root->key_type != KEY_INT) return -1;
+    if (avl->root == NULL){
+        pthread_rwlock_unlock(&avl->rwl);
+        return 0;
+    }
+
+    if (avl->root->key_type != KEY_INT){
+        pthread_rwlock_unlock(&avl->rwl);
+        return -1;
+    }
 
     gotError = send_to_all_fds_recursive(avl->root, message, size);
 
     pthread_rwlock_unlock(&avl->rwl);
+
     return (gotError) ? -1 : 0;
 }
 
@@ -436,6 +445,7 @@ void free_avl_node(AVLNode *node) {
 
 int free_avl(AVL *avl) {
     int destroy_result;
+
     if (pthread_rwlock_wrlock_error_check(&avl->rwl, NULL) < 0) return -1;
 
     free_avl_node(avl->root);
@@ -481,7 +491,7 @@ int remove_node_subscriptions_recursive(AVLNode *root, AVL *avl_sessions[],\
     session_id = root->key.int_key;
 
     // Remove subscriptions from current subtree
-    if (avl_remove(avl_sessions[session_id], key) < 0) result = -1;
+    if (avl_remove(avl_sessions[session_id], (void *) key) < 0) result = -1;
 
     // Remove subscriptions from the right subtree
     result += remove_node_subscriptions_recursive(root->right,avl_sessions,key);
@@ -495,13 +505,15 @@ int remove_node_subscriptions(AVL *avl_kvs_node, AVL *avl_sessions[],\
     const char* key){
 
     AVLNode *node;
-    int session_id;
     int result;
 
     if (pthread_rwlock_wrlock_error_check(&avl_kvs_node->rwl, NULL) < 0)
         return -1;
 
-    if (avl_kvs_node->root == NULL) return 0;
+    if (avl_kvs_node->root == NULL){
+        pthread_rwlock_unlock(&avl_kvs_node->rwl);
+        return 0;
+    }
 
     node = avl_kvs_node->root;
 
@@ -524,32 +536,46 @@ int remove_node_subscriptions(AVL *avl_kvs_node, AVL *avl_sessions[],\
  * @param func The function to apply to each node, args are (int, char*).
  * @param int_value First arg of func and needs to be an integer.
  */
-void apply_to_all_nodes_recursive(AVLNode *node, void (*func)(int, char *),\
+int apply_to_all_nodes_recursive(AVLNode *node, int (*func)(int, char *),\
     int int_value) {
+
+    int error = 0;
 
     if (node) {
         // Apply function to left sub-tree
         apply_to_all_nodes_recursive(node->left, func, int_value);
         // Apply function to current node
-        func(int_value, node->key.str_key);
+        error += func(int_value, node->key.str_key);
         // Apply function to right sub-tree
         apply_to_all_nodes_recursive(node->right, func, int_value);
     }
+    return error;
 }
 
 
-int apply_to_all_nodes(AVL *avl, void (*func)(int, char *), int int_value) {
-    if (!avl) return -1;
+int apply_to_all_nodes(AVL *avl, int (*func)(int, char *), int int_value) {
+    int error = 0;
 
-    if (pthread_rwlock_rdlock_error_check(&avl->rwl, NULL) < 0) return -1;
-
-    if (avl->root->key_type != KEY_STRING) {
-        pthread_rwlock_unlock(&avl->rwl);
+    if (!avl){
+        printf("AVL is NULL\n");
         return -1;
     }
 
-    apply_to_all_nodes_recursive(avl->root, func, int_value);
+    if (pthread_rwlock_rdlock_error_check(&avl->rwl, NULL) < 0){
+        printf("Error locking AVL\n");
+        return -1;
+    }
+
+    if (avl->root->key_type != KEY_STRING) {
+        pthread_rwlock_unlock(&avl->rwl);
+        printf("AVL key type is not string\n");
+        return -1;
+    }
+
+    error = apply_to_all_nodes_recursive(avl->root, func, int_value);
+
+    printf("Error: %d\n", error);
 
     pthread_rwlock_unlock(&avl->rwl);
-    return 0;
+    return error ? -1 : 0;
 }

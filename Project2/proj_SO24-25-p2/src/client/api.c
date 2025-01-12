@@ -1,9 +1,5 @@
-#include <fcntl.h>
-#include <stdio.h>
-
 #include "api.h"
-#include "src/common/constants.h"
-#include "src/common/protocol.h"
+
 
 
 char api_req_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
@@ -16,13 +12,13 @@ int api_resp_pipe_fd;
 // create pipes and connect
 int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path,
                 char const* notif_pipe_path, int* client_notif_pipe_fd) {
-  int length_con_buffer = 1 + (MAX_PIPE_PATH_LENGTH + 1) * 3;
+  size_t length_con_buffer = 1 + (MAX_PIPE_PATH_LENGTH + 1) * 3;
   char connection_buffer[length_con_buffer];
   char *cur_buffer_pos;
   int server_pipe_fd;
 
   char response_buffer[2];
-  int interrupted_read;
+  int interrupted_read = 0;
 
   unlink(req_pipe_path);
   unlink(resp_pipe_path);
@@ -38,10 +34,10 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
     return 1;
   }
 
-  // if (mkfifo(notif_pipe_path, 0666) < 0){
-  //   perror("Couldn't create notifications pipe.");
-  //   return 1;
-  // }
+  if (mkfifo(notif_pipe_path, 0666) < 0){
+    perror("Couldn't create notifications pipe.");
+    return 1;
+  }
 
   if ((server_pipe_fd = open(server_pipe_path, O_WRONLY)) < 0){
     perror("Couldn't open server pipe.");
@@ -70,16 +66,22 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
 
   close(server_pipe_fd);
 
-  if ((api_req_pipe_fd = open(req_pipe_path, O_WRONLY)) < 0){
-    perror("Couldn't open client request pipe.");
-    return 1;
-  }
+  printf("Opening pipes...\n");
 
   if ((api_resp_pipe_fd = open(resp_pipe_path, O_RDONLY)) < 0){ //ver se n bloqueia e se tem de ser rdwr///////////////////////////
     perror("Couldn't open client response pipe.");
     close(api_req_pipe_fd);
     return 1;
   }
+
+  printf("Opened response pipe.\n");
+
+  if ((api_req_pipe_fd = open(req_pipe_path, O_WRONLY)) < 0){
+    perror("Couldn't open client request pipe.");
+    return 1;
+  }
+
+  printf("Opened request pipe.\n");
 
   if ((*client_notif_pipe_fd = open(notif_pipe_path, O_RDONLY)) < 0){ //ver se n bloqueia e se tem de ser rdwr////////////////////////7
     perror("Couldn't open client notification pipe.");
@@ -88,6 +90,10 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
     return 1;
   }
 
+  printf("Opened notification pipe.\n");
+
+  printf("Waiting for server response...\n");
+
   if (read_all(api_resp_pipe_fd, response_buffer, 2, &interrupted_read) < 0){
     perror("Couldn't read message from server.");
     close(api_req_pipe_fd);
@@ -95,6 +101,8 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
     close(*client_notif_pipe_fd);
     return 1;
   }
+
+  printf("Server response received.\n");
 
   if(response_buffer[1] != '0'){
     perror("Couldn't connect to server.");
@@ -103,7 +111,7 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
     close(*client_notif_pipe_fd);
   }
 
-  fprintf(stdout, "Server returned %c for operation: connect", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
+  fprintf(stdout, "Server returned %c for operation: connect\n", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
 
   return (response_buffer[1] == '0') ? 0 : 1;
 }
@@ -111,9 +119,10 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
 // close pipes and unlink pipe files
 int kvs_disconnect(void) {
   char response_buffer[2];
-  int interrupted_read;
+  int interrupted_read = 0;
+  char opcode = OP_CODE_DISCONNECT;
 
-  if (write_all(api_req_pipe_fd, OP_CODE_DISCONNECT, 1) < 0)
+  if (write_all(api_req_pipe_fd, &opcode, 1) < 0)
     return 1;
   /////////////////////////////////////////////// FALTA READ ??????????????????????????????????????????????????????????????????????????????????????
 
@@ -122,7 +131,7 @@ int kvs_disconnect(void) {
     return 1;
   }
 
-  fprintf(stdout, "Server returned %c for operation: disconnect", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
+  fprintf(stdout, "Server returned %c for operation: disconnect\n", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
 
   if(response_buffer[1] != '0') return 1;
 
@@ -138,7 +147,7 @@ int kvs_disconnect(void) {
 int kvs_subscribe(const char* key) {
   char subscribe_buffer[MAX_STRING_SIZE + 2];
   char response_buffer[2];
-  int interrupted_read;
+  int interrupted_read = 0;
 
   *subscribe_buffer = OP_CODE_SUBSCRIBE;
   strncpy(subscribe_buffer + 1, key, MAX_STRING_SIZE + 1);
@@ -151,7 +160,7 @@ int kvs_subscribe(const char* key) {
     return 1;
   }
 
-  fprintf(stdout, "Server returned %c for operation: subscribe", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
+  fprintf(stdout, "Server returned %c for operation: subscribe\n", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
 
   return (response_buffer[1] == '0') ? 0 : 1;
 }
@@ -160,7 +169,7 @@ int kvs_subscribe(const char* key) {
 int kvs_unsubscribe(const char* key) {
   char unsubscribe_buffer[MAX_STRING_SIZE + 2];
   char response_buffer[2];
-  int interrupted_read;
+  int interrupted_read = 0;
 
   *unsubscribe_buffer = OP_CODE_UNSUBSCRIBE;
   strncpy(unsubscribe_buffer + 1, key, MAX_STRING_SIZE + 1);
@@ -173,7 +182,7 @@ int kvs_unsubscribe(const char* key) {
     return 1;
   }
 
-  fprintf(stdout, "Server returned %c for operation: unsubscribe", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
+  fprintf(stdout, "Server returned %c for operation: unsubscribe\n", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
 
   return (response_buffer[1] == '0') ? 0 : 1;
 }

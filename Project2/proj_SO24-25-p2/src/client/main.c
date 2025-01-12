@@ -12,13 +12,14 @@
 
 int client_notifications_fd;
 
-void notif_function(void *args){
+void* notif_function(void *args){
+  (void)args;  // Ignore the unused parameter
 
   ssize_t bytes_read1, bytes_read2;
   char key[MAX_STRING_SIZE + 1];
   char value[MAX_STRING_SIZE + 1];
   char message[MAX_STRING_SIZE * 2 + 5];
-  int interrupted_read;
+  int interrupted_read = 0;
 
   while (1) {
 
@@ -32,6 +33,7 @@ void notif_function(void *args){
     }
     key[bytes_read1] = '\0';
 
+    interrupted_read = 0;
     bytes_read2 = read_all(client_notifications_fd, value, MAX_STRING_SIZE, &interrupted_read);
     if (bytes_read2 <= 0) {
       if (bytes_read2 == 0) {
@@ -44,7 +46,7 @@ void notif_function(void *args){
 
     snprintf(message, sizeof(message), "(%s,%s)\n", key, value);
 
-    if (write_all(stdout, message, strlen(message)) == -1) {
+    if (write_all(STDOUT_FILENO, message, strlen(message)) == -1) {
       perror("Error writing notifications to stdout");
     }
   }
@@ -63,6 +65,7 @@ int main(int argc, char* argv[]) {
   char req_pipe_path[256] = "/tmp/req";
   char resp_pipe_path[256] = "/tmp/resp";
   char notif_pipe_path[256] = "/tmp/notif";
+  char server_pipe_path[MAX_PIPE_PATH_LENGTH + 6];
 
   pthread_t notif_thread;
 
@@ -70,17 +73,18 @@ int main(int argc, char* argv[]) {
   unsigned int delay_ms;
   size_t num;
 
+  snprintf(server_pipe_path, MAX_PIPE_PATH_LENGTH+6, "%s%s", "/tmp/", argv[2]);
   strncat(req_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(resp_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(notif_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
 
   // TODO open pipes
 
-  if (kvs_connect(req_pipe_path, resp_pipe_path, argv[2], notif_pipe_path, &client_notifications_fd) != 0) {
+  if (kvs_connect(req_pipe_path, resp_pipe_path, server_pipe_path, notif_pipe_path, &client_notifications_fd) != 0) {
     return 1;
   }
 
-  if (pthread_create(&notif_thread, NULL, notif_function,
+  if (pthread_create(&notif_thread, NULL, notif_function,\
     NULL) != 0){
 
     fprintf(stderr, "Error: Unable to create notifications thread \n");

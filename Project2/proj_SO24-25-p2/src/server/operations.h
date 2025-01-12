@@ -54,7 +54,7 @@ int kvs_disconnect(int client_id);
 
 int kvs_subscribe(int session_id, int notif_pipe_fd, char key[MAX_STRING_SIZE + 1]);
 
-int kvs_unsubscribe(int session_id, int notif_pipe_fd, char key[MAX_STRING_SIZE + 1]);
+int kvs_unsubscribe(int session_id, char key[MAX_STRING_SIZE + 1]);
 
 /// Waits for the last backup to be called.
 void kvs_wait_backup();

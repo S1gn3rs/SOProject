@@ -130,7 +130,7 @@ int clean_avl(AVL *avl);
  * @param int_value First arg of func and needs to be an integer.
  * @return 0 on success, -1 if any error occurs.
  */
-int apply_to_all_nodes(AVL *avl, void (*func)(int, char *), int int_value);
+int apply_to_all_nodes(AVL *avl, int (*func)(int, char *), int int_value);
 
 
 #endif // AVL_H

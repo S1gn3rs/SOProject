@@ -35,7 +35,6 @@ typedef struct ClientData { // Unlock the hash table's index list that have been
   char notif_pipe_path[MAX_PIPE_PATH_LENGTH]; // Notification pipe path.////////////////////////////////////////////////////77777
   struct AVL *subscribed_keys;
   int subscribed_count;
-  int session_id;
 }ClientData;
 
 
@@ -77,12 +76,12 @@ void *do_commands(void *args) {
     fprintf(stderr, "Error trying to lock a mutex\n");
     return NULL;
   }
+
   while ((entry = readdir(directory)) != NULL) {
 
     pthread_mutex_unlock(&mutex);
 
     length_entry_name = strlen(entry->d_name);
-
     // Check if the file is a .job file if not continue to the next file.
     if (length_entry_name < 4 || strcmp(entry->d_name + length_entry_name - 4,\
     ".job") != 0){
@@ -136,6 +135,7 @@ void *do_commands(void *args) {
 
     int reading_commands = 1; // flag to let commands from the file.
     while(reading_commands){
+
       // Get the next command.
       switch (get_next(in_fd)) {
         case CMD_WRITE:
@@ -145,11 +145,9 @@ void *do_commands(void *args) {
             fprintf(stderr, "Invalid command. See HELP for usage\n");
             continue;
           }
-
           if (kvs_write(num_pairs, keys, values)) {
             fprintf(stderr, "Failed to write pair\n");
           }
-
           break;
 
         case CMD_READ:
@@ -272,6 +270,7 @@ void *do_commands(void *args) {
           reading_commands = 0;
       }
     }
+
     close(in_fd);
     close(out_fd);
     // Lock the mutex to read the directory.
@@ -287,7 +286,8 @@ void *do_commands(void *args) {
 
 
 void *client_thread(void *args) {
-
+  int session_id =  *(int*) args;
+  
   while(1){
     ClientNode* client;
 
@@ -340,12 +340,11 @@ void *client_thread(void *args) {
     while(client_connected){
 
       char op_code;
-      int session_id = client->data.session_id;
-      int interrupted_read;
+      int interrupted_read = 0;
       int read_output;
       char key[MAX_STRING_SIZE + 1];
 
-      if ((read_output = read_all(req_pipe_fd, op_code, sizeof(char), interrupted_read)) < 0){
+      if ((read_output = read_all(req_pipe_fd, &op_code, sizeof(char), &interrupted_read)) < 0){
         perror("Couldn't read message from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
         break;
       }else if(read_output == 0){
@@ -357,7 +356,21 @@ void *client_thread(void *args) {
 
         case OP_CODE_DISCONNECT:
 
-          kvs_disconnect(client->data.subscribed_keys, session_id);
+          response_connection[0] = OP_CODE_DISCONNECT;
+          response_connection[1] = '1';
+
+          if(kvs_disconnect(session_id) != 0){
+            if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+              perror("Error writing OP_CODE and result to response pipe");
+              break;
+            }
+          }
+
+          response_connection[0] = '0';
+
+          if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+            perror("Error writing OP_CODE and result to response pipe");
+          }
 
           close(req_pipe_fd);
           close(resp_pipe_fd);
@@ -369,7 +382,7 @@ void *client_thread(void *args) {
 
           response_connection[0] = OP_CODE_SUBSCRIBE;
           response_connection[1] = '1';
-          if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, interrupted_read)) < 0){
+          if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, &interrupted_read)) < 0){
             perror("Couldn't read key from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
             break;
           }else if(read_output == 0){
@@ -392,14 +405,14 @@ void *client_thread(void *args) {
 
           response_connection[0] = OP_CODE_UNSUBSCRIBE;
           response_connection[1] = '1';
-          if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, interrupted_read)) < 0){
+          if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, &interrupted_read)) < 0){
             perror("Couldn't read key from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
             break;
           }else if(read_output == 0){
             perror("Got EOF while trying to read key from client.");
             break;
           }
-          if(kvs_unsubscribe(session_id, notif_pipe_fd, key) == 0){
+          if(kvs_unsubscribe(session_id, key) == 0){
             response_connection[1] = '0';
             client->data.subscribed_count--;
             avl_remove(client->data.subscribed_keys, key);
@@ -431,14 +444,10 @@ int main(int argc, char *argv[]) {
   // pipe name length plus "/tmp/" and null terminator
   char server_pipe_path[MAX_PIPE_PATH_LENGTH + 6];
 
-  pthread_t job_threads[max_threads];           // Job thread pool.
   pthread_t client_threads[MAX_SESSION_COUNT];  // Client thread pool.
-  int job_threads_error[max_threads];
   int client_threads_error[MAX_SESSION_COUNT];
 
   JobThreadArgs *job_args;
-
-
 
   // Open the directory.
   directory = opendir(argv[1]);
@@ -462,6 +471,9 @@ int main(int argc, char *argv[]) {
       closedir(directory); // Close the directory in case of error.
       return -1;
   }
+
+  pthread_t job_threads[max_threads];           // Job thread pool.
+  int job_threads_error[max_threads];
 
   // Prefix of "/tmp/" in order to change pipe location to /tmp/
   snprintf(server_pipe_path, MAX_PIPE_PATH_LENGTH+6, "%s%s", "/tmp/", argv[4]);
@@ -527,14 +539,13 @@ int main(int argc, char *argv[]) {
     else job_threads_error[thread_count] = 0;
   }
 
-  // Free the arguments struct.
-  free(job_args);
+  int idSessions[MAX_SESSION_COUNT];
 
-
+  for (int i = 0; i < MAX_SESSION_COUNT; i++) idSessions[i] = i;
 
   for(int thread_count = 0; thread_count < MAX_SESSION_COUNT; thread_count++){
     if (pthread_create(&client_threads[thread_count], NULL, client_thread,\
-    NULL) != 0){
+    (void*) (&idSessions[thread_count])) != 0){
 
       fprintf(stderr, "Error: Unable to create client thread %d.\n", thread_count);
       client_threads_error[thread_count] = 1;
@@ -548,18 +559,16 @@ int main(int argc, char *argv[]) {
 
   pthread_mutex_init(&queue_mutex, NULL);
 
-  int idClient = 1;
-
   while (1){
-    int length_client_con = 1 + (MAX_PIPE_PATH_LENGTH + 1) * 3;
+    size_t length_client_con = 1 + (MAX_PIPE_PATH_LENGTH + 1) * 3;
     char client_connection[length_client_con]; /////////////////////CONFIRMAR SE É SUPOSTO TER MAIS 1 PARA O \00 OU NAO ////////////////////////7
     char *aux_client_conn;
-    int interrupted_read;////////////////// dar handle aqui e na api tmb ///////////////////////////////////////////////////////////////
+    int interrupted_read = 0;////////////////// dar handle aqui e na api tmb ///////////////////////////////////////////////////////////////
     int read_output;
     ClientNode *client;
     ClientData *data;
 
-    if ((read_output = read_all(server_pipe_fd, client_connection, length_client_con, interrupted_read)) < 0){
+    if ((read_output = read_all(server_pipe_fd, client_connection, length_client_con, &interrupted_read)) < 0){
       perror("Couldn't read connection message from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
       break;
     }
@@ -569,8 +578,16 @@ int main(int argc, char *argv[]) {
       break;
     }
 
+    // if(read(server_pipe_fd, client_connection, length_client_con) < 0){
+    //   perror("Couldn't read connection message from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
+    //   // break;
+    //   //while (1) printf("break\n");///////////////////////////////////////////////////////////////////////////////////////////////
+    // }
+
+    printf("Received connection message from client.\n");
+
     if (*client_connection != OP_CODE_CONNECT){
-      fprintf(stderr, "Message from client had OPCODE: %c instead of OPCODE: 1.\n", OP_CODE_CONNECT);
+      fprintf(stderr, "Message from client had OPCODE: %c instead of OPCODE: 1.\n", client_connection[0]);
       continue;
     }
 
@@ -582,7 +599,6 @@ int main(int argc, char *argv[]) {
 
     client->next = NULL;
     data = &client->data;
-    data->session_id = idClient;
     data->subscribed_count = 0;
     data->subscribed_keys = create_avl();
     if (data->subscribed_keys == NULL){
@@ -612,10 +628,7 @@ int main(int argc, char *argv[]) {
 
     sem_post(&sem_remove_from_queue); // Let a thread get one client from the queue.
 
-    idClient++;
   }
-
-
 
   // DAQUI PARA BAIXO ACHO QUE NÃO É PRECISO NADA E PELA CONVERSA COM O STOR PODEMOS MANTER OU ELIMINAR --------------------------------------------
 
@@ -628,12 +641,15 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // for (int i = 0; i < MAX_SESSION_COUNT; i++) {
-  //   if (client_threads_error[i]) continue; // Skip if there was an error
-  //   if (pthread_join(client_threads[i], NULL) != 0) {
-  //     fprintf(stderr, "Error: Unable to join  client thread %d.\n", i);
-  //   }
-  // }
+  for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+    if (client_threads_error[i]) continue; // Skip if there was an error
+    if (pthread_join(client_threads[i], NULL) != 0) {
+      fprintf(stderr, "Error: Unable to join  client thread %d.\n", i);
+    }
+  }
+
+  // Free the arguments struct.
+  free(job_args);
 
   // Close the directory.
   closedir(directory);

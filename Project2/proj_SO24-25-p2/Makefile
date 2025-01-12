@@ -5,7 +5,7 @@ CFLAGS = -g -std=c17 -D_POSIX_C_SOURCE=200809L -I. \
 		 -Wall -Wextra \
 		 -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-enum -Wundef -Wunreachable-code -Wunused \
 		 -pthread
-# -fsanitize=address -fsanitize=undefined 
+	     -fsanitize=address -fsanitize=undefined
 
 
 ifneq ($(shell uname -s),Darwin) # if not MacOS
@@ -14,7 +14,8 @@ endif
 
 all: src/server/kvs src/client/client
 
-src/server/kvs: src/common/protocol.h src/common/constants.h src/server/main.c src/server/operations.o src/server/kvs.o src/server/io.o src/server/parser.o src/common/io.o
+# removed "src/server/io.o"
+src/server/kvs: src/common/protocol.h src/common/constants.h src/common/safeFunctions.o src/server/main.c src/server/operations.o src/server/kvs.o src/server/parser.o src/server/avl.o src/common/io.o
 	$(CC) $(CFLAGS) $(SLEEP) -o $@ $^
 
 
