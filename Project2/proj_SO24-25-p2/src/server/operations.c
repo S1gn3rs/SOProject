@@ -8,10 +8,12 @@
 #include "kvs.h"
 #include "constants.h"
 #include "../common/safeFunctions.h"
+#include "../common/constants.h"
 
 /// Hash table to store the key value pairs.
-static struct HashTable* kvs_table = NULL;
+static struct HashTable *kvs_table = NULL;
 
+static struct AVL *avl_clients_node[MAX_SESSION_COUNT];
 
 /// Calculates a timespec from a delay in milliseconds.
 /// @param delay_ms Delay in milliseconds.
@@ -153,9 +155,11 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], \
   char values[][MAX_STRING_SIZE]) {
 
   int is_locked[26] = {0};  // To indicate which indices are lock
+  int error = 0;
   size_t *indexs;           // index of each par
-  char notif_key[MAX_STRING_SIZE + 1];
-  char notif_value[MAX_STRING_SIZE + 1];
+
+  char notif_message[MAX_STRING_SIZE * 2 + 2];
+  char *aux_message;
 
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
@@ -188,18 +192,21 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], \
       is_locked[indexList] = 1;
     }
   }
+
   for(size_t ind = 0; ind < num_pairs; ind++) {
     size_t indexNodes = indexs[ind]; // index of the node to write
+
+    aux_message = notif_message;
+    strncpy(aux_message, keys[indexNodes], MAX_STRING_SIZE + 1);
+
+    aux_message += MAX_STRING_SIZE + 1;
+    strncpy(aux_message, values[indexNodes], MAX_STRING_SIZE + 1);
+
     // Try to write the key value pair to the hash table
-    if (write_pair(kvs_table, keys[indexNodes], values[indexNodes]) != 0) {
+    if ((error = write_pair(kvs_table, keys[indexNodes], values[indexNodes], notif_message)) == -1) {
       fprintf(stderr, "Failed to write keypair (%s,%s)\n", keys[indexNodes],\
         values[indexNodes]);
-    } else{
-      strncpy(notif_key, keys[indexNodes], MAX_STRING_SIZE + 1);
-      strncpy(notif_value, values[indexNodes], MAX_STRING_SIZE + 1);
     }
-
-
   }
   // Unlock the hash table's index list that have been locked
   for (size_t ind = 0; ind < 26; ind++)
@@ -209,6 +216,7 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], \
   free(indexs);
   return 0;
 }
+
 
 
 int kvs_read(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
@@ -291,8 +299,8 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
   int aux = 0;
   int ret = 0;
 
-  char notif_key[MAX_STRING_SIZE + 1];
-  char notif_value[MAX_STRING_SIZE + 1];
+  char notif_message[MAX_STRING_SIZE * 2 + 2] = {0};
+  char *aux_message;
 
   ssize_t deleted_length = strlen("DELETED");
 
@@ -332,12 +340,14 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
 
   for (size_t i = 0; i < num_pairs; i++) {
     size_t indexNodes = indexs[i];
-    strncpy(notif_key, keys[indexNodes], MAX_STRING_SIZE + 1);
 
-    strncpy(notif_value, "DELETED", MAX_STRING_SIZE);
-    memset(notif_value + deleted_length, '\0', MAX_STRING_SIZE - deleted_length);
+    aux_message = notif_message;
+    strncpy(aux_message, keys[indexNodes], MAX_STRING_SIZE + 1);
 
-    if (delete_pair(kvs_table, keys[indexNodes]) != 0) {
+    aux_message += MAX_STRING_SIZE + 1;
+    strncpy(aux_message, "DELETED", MAX_STRING_SIZE + 1);
+
+    if (delete_pair(kvs_table, keys[indexNodes], notif_message) != 0) {
       snprintf(buffer, MAX_WRITE_SIZE, "(%s,KVSMISSING)", keys[indexNodes]);
       if (!aux) {
         if (write_error_check(fd, "[") == -1){
@@ -442,9 +452,46 @@ int kvs_backup(int fd) {
 }
 
 
+int kvs_remove_subscription(int client_id, char *key) {
+  size_t indexList = hash(key);
+
+  if(hash_table_rdlock()) return -1;
+
+  if(hash_table_list_rdlock(indexList)){
+    hash_table_unlock();
+    return -1;
+  }
+
+  KeyNode *key_node = kvs_table->table[indexList]->head;
+
+  if (key_node == NULL){
+    hash_table_list_unlock(indexList);
+    hash_table_unlock();
+    return -1;
+  }
+
+  while (key_node != NULL) {
+    if (strcmp(key_node->key, key) == 0) {
+      avl_remove(key_node->avl_notif_fds, client_id);
+
+      hash_table_list_unlock(indexList);
+      hash_table_unlock();
+      return 0;
+    }
+    key_node = key_node->next; // Move to the next node
+  }
+
+  hash_table_list_unlock(indexList);
+  hash_table_unlock();
+  return -1;
+}
 
 
-int kvs_disconnect(){
+int kvs_disconnect(int client_id){
+
+  AVL *avl = avl_clients_node[client_id];
+
+  if(apply_to_all_nodes(avl, kvs_remove_subscription, client_id) != 0) return -1;
 
 
 }
@@ -465,9 +512,37 @@ int kvs_subscribe(int client_id, int notif_fd, char *key){
     return -1;
   }
 
-
   if (subscribe_pair(kvs_table, key, client_id, notif_fd) != 0) {
     fprintf(stderr, "Failed to subscribe client %d to key %s.\n", client_id,\
+    key);
+    hash_table_list_unlock(indexList);
+    hash_table_unlock();
+    return -1;
+  }
+  
+  hash_table_list_unlock(indexList);
+  hash_table_unlock();
+  return 0;
+}
+
+
+int kvs_unsubscribe(int client_id, int notif_fd, char *key){
+  size_t indexList = hash(key);
+
+  if (kvs_table == NULL) {
+    fprintf(stderr, "KVS state must be initialized\n");
+    return -1;
+  }
+
+  if (hash_table_rdlock()) return -1;
+
+  if (hash_table_list_rdlock(indexList)){
+    hash_table_unlock();
+    return -1;
+  }
+
+  if (unsubscribe_pair(kvs_table, key, client_id, notif_fd) != 0) {
+    fprintf(stderr, "Failed to unsubscribe client %d to key %s.\n", client_id,\
     key);
     hash_table_list_unlock(indexList);
     hash_table_unlock();
@@ -476,11 +551,6 @@ int kvs_subscribe(int client_id, int notif_fd, char *key){
   hash_table_list_unlock(indexList);
   hash_table_unlock();
   return 0;
-}
-
-
-int kvs_unsubscribe(){
-
 
 }
 

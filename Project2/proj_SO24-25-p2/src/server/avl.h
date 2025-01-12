@@ -13,27 +13,6 @@ typedef enum KeyType {
 } KeyType;
 
 
-// // Node of the AVL tree.
-// typedef struct AVLNode {
-//     int key;
-//     int fd;
-//     struct AVLNode *left;   // Pointer to the left child node
-//     struct AVLNode *right;  // Pointer to the right child node
-//     int height;             // Height of the node
-// } AVLNode;
-
-// typedef struct AVLNode {
-//     KeyType key_type;        // Indicates if the key is int or string
-//     union {
-//         int int_key;         // Integer key
-//         char *str_key;       // String key
-//     } key;
-//     int fd;                  // Associated file descriptor
-//     struct AVLNode *left;    // Pointer to the left node
-//     struct AVLNode *right;   // Pointer to the right  node
-//     int height;              // Height of the node
-// } AVLNode;
-
 typedef struct AVLNode {
     KeyType key_type;        // Indicates if the key is int or string
     union {
@@ -47,9 +26,6 @@ typedef struct AVLNode {
     struct AVLNode *right;   // Pointer to the right node
     int height;              // Height of the node
 } AVLNode;
-
-
-
 
 
 // AVL tree structure
@@ -76,7 +52,7 @@ AVL *create_avl();
  *
  * @return 0 if the pair was added successfully, -1 otherwise.
  */
-int avl_add(AVL *avl, int key, int fd);
+int avl_add(AVL *avl, void* key, int fd);
 
 
 /**
@@ -87,7 +63,7 @@ int avl_add(AVL *avl, int key, int fd);
  *
  * @return 0 if the node was removed successfully, -1 otherwise.
  */
-int avl_remove(AVL *avl, int key);
+int avl_remove(AVL *avl, void* key);
 
 
 /**
@@ -99,7 +75,7 @@ int avl_remove(AVL *avl, int key);
  *
  * @return 0 if the key was found, -1 otherwise.
  */
-int has_fd(AVL *avl, int key, int *fd);
+int has_fd(AVL *avl, void* key, int *fd);
 
 
 /**
@@ -122,6 +98,39 @@ int send_to_all_fds(AVL *avl, const char *message, size_t size);
  * @return 0 if the AVL tree was freed successfully, -1 otherwise.
  */
 int free_avl(AVL *avl);
+
+
+/**
+ * Clean the AVL tree by freeing all its nodes.
+ *
+ * @param avl The AVL tree to be freed.
+ *
+ * @return 0 if the AVL tree was freed successfully, -1 otherwise.
+ */
+int clean_avl(AVL *avl);
+
+
+/**
+ * Removes subscriptions from avl_sessions based on the keys in avl_kvs_node.
+ *
+ * @param avl_kvs_node The AVL tree containing the keys to remove subscriptions for.
+ * @param avl_sessions An array of AVL trees representing session subscriptions.
+ * @param key String of kvs node's key to remove from sessions' avl.
+ *
+ * @return 0 on success, -1 if any error occurs.
+ */
+ int remove_node_subscriptions(AVL *avl_kvs_node, AVL *avl_sessions[], const char* key);
+
+
+/**
+ * Applies a function to each node in the AVL tree.
+ *
+ * @param avl The AVL tree.
+ * @param func The function to apply to each node, args are (int, char*).
+ * @param int_value First arg of func and needs to be an integer.
+ * @return 0 on success, -1 if any error occurs.
+ */
+int apply_to_all_nodes(AVL *avl, void (*func)(int, char *), int int_value);
 
 
 #endif // AVL_H

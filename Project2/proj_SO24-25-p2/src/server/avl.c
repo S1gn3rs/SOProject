@@ -323,7 +323,7 @@ AVL *create_avl() {
 }
 
 
-int avl_add(AVL *avl, int key, int fd) {
+int avl_add(AVL *avl, void* key, int fd) {
     if (!avl || pthread_rwlock_wrlock_error_check(&avl->rwl, NULL) < 0)
         return -1;
 
@@ -334,7 +334,7 @@ int avl_add(AVL *avl, int key, int fd) {
 }
 
 
-int avl_remove(AVL *avl, int key) {
+int avl_remove(AVL *avl, void* key) {
     if (!avl || pthread_rwlock_wrlock_error_check(&avl->rwl, NULL) < 0)
         return -1;
 
@@ -444,4 +444,112 @@ int free_avl(AVL *avl) {
     destroy_result = pthread_rwlock_destroy(&avl->rwl);
     free(avl);
     return destroy_result;
+}
+
+int clean_avl(AVL *avl){
+    if (pthread_rwlock_wrlock_error_check(&avl->rwl, NULL) < 0) return -1;
+
+    free_avl_node(avl->root);
+    pthread_rwlock_unlock(&avl->rwl);
+
+    return 0;
+}
+
+
+/**
+ * Recursively removes subscriptions from avl_sessions based on the keys in
+ * avl_kvs_node.
+ *
+ * @param node The current node in the avl_kvs_node tree.
+ * @param avl_sessions An array of AVL trees representing session subscriptions.
+ * @param key String of kvs node's key to remove from sessions' avl.
+ *
+ * @return 0 on success, -1 if any error occurs.
+ */
+int remove_node_subscriptions_recursive(AVLNode *root, AVL *avl_sessions[],\
+    const char* key){
+
+    int result = 0;
+    int session_id;
+
+
+    if (!root) return 0;
+
+    // Remove subscriptions from the left subtree
+    result += remove_node_subscriptions_recursive(root->left,avl_sessions,key);
+
+    session_id = root->key.int_key;
+
+    // Remove subscriptions from current subtree
+    if (avl_remove(avl_sessions[session_id], key) < 0) result = -1;
+
+    // Remove subscriptions from the right subtree
+    result += remove_node_subscriptions_recursive(root->right,avl_sessions,key);
+
+    return result ? -1 : 0;
+
+}
+
+
+int remove_node_subscriptions(AVL *avl_kvs_node, AVL *avl_sessions[],\
+    const char* key){
+
+    AVLNode *node;
+    int session_id;
+    int result;
+
+    if (pthread_rwlock_wrlock_error_check(&avl_kvs_node->rwl, NULL) < 0)
+        return -1;
+
+    if (avl_kvs_node->root == NULL) return 0;
+
+    node = avl_kvs_node->root;
+
+    if (node->key_type != KEY_INT){
+        pthread_rwlock_unlock(&avl_kvs_node->rwl);
+        return -1;
+    }
+
+    result = remove_node_subscriptions_recursive(node, avl_sessions, key);
+
+    pthread_rwlock_unlock(&avl_kvs_node->rwl);
+    return result ? -1 : 0;
+}
+
+
+/**
+ * Recursively applies a function to each node in the AVL tree.
+ *
+ * @param node The current node in the AVL tree.
+ * @param func The function to apply to each node, args are (int, char*).
+ * @param int_value First arg of func and needs to be an integer.
+ */
+void apply_to_all_nodes_recursive(AVLNode *node, void (*func)(int, char *),\
+    int int_value) {
+
+    if (node) {
+        // Apply function to left sub-tree
+        apply_to_all_nodes_recursive(node->left, func, int_value);
+        // Apply function to current node
+        func(int_value, node->key.str_key);
+        // Apply function to right sub-tree
+        apply_to_all_nodes_recursive(node->right, func, int_value);
+    }
+}
+
+
+int apply_to_all_nodes(AVL *avl, void (*func)(int, char *), int int_value) {
+    if (!avl) return -1;
+
+    if (pthread_rwlock_rdlock_error_check(&avl->rwl, NULL) < 0) return -1;
+
+    if (avl->root->key_type != KEY_STRING) {
+        pthread_rwlock_unlock(&avl->rwl);
+        return -1;
+    }
+
+    apply_to_all_nodes_recursive(avl->root, func, int_value);
+
+    pthread_rwlock_unlock(&avl->rwl);
+    return 0;
 }

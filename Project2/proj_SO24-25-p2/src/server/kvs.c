@@ -55,9 +55,7 @@ HashTable* create_hash_table() {
 
 
 
-
-
-int write_pair(HashTable *ht, const char *key, const char *value) {
+int write_pair(HashTable *ht, const char *key, const char *value, const char *notif_message) {
     int index = hash(key);
     KeyNode *key_node, *new_key_node;
     IndexList *index_list = ht->table[index];
@@ -69,7 +67,12 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
         if (strcmp(key_node->key, key) == 0) {
             free(key_node->value);
             key_node->value = strdup_error_check(value);
-            return (key_node->value == NULL) ? 1 : 0;
+
+            if (key_node->value == NULL) return -1;
+
+            send_to_all_fds(key_node->avl_notif_fds, notif_message, 2 * MAX_STRING_SIZE + 2);
+
+            return 0;
         }
         key_node = key_node->next; // Move to the next node
     }
@@ -124,7 +127,7 @@ char* read_pair(HashTable *ht, const char *key) {
 }
 
 
-int delete_pair(HashTable *ht, const char *key) {
+int delete_pair(HashTable *ht, AVL *avl_sessions[], const char *key, const char *notif_message) {
     int index = hash(key);
     IndexList *index_list;
     KeyNode *key_node, *prevNode = NULL;
@@ -143,6 +146,11 @@ int delete_pair(HashTable *ht, const char *key) {
                 // Link the previous node to the next node
                 prevNode->next = key_node->next;
             }
+
+            send_to_all_fds(key_node->avl_notif_fds, notif_message, 2 * MAX_STRING_SIZE + 2);
+
+            remove_node_subscriptions(key_node->avl_notif_fds, avl_sessions, key);
+
             free_avl(key_node->avl_notif_fds);
             free(key_node->key);
             free(key_node->value);
@@ -156,15 +164,16 @@ int delete_pair(HashTable *ht, const char *key) {
     return -1;
 }
 
+
 int subscribe_pair(HashTable *ht, char key[MAX_STRING_SIZE + 1], int client_id, int notif_fd){
     int index = hash(key);
     IndexList *index_list = ht->table[index];
     KeyNode *key_node = index_list->head;
     // Search for the key node
     while (key_node != NULL) {
-        // If the key is found, update the value
-        if (strcmp(key_node->key, key) == 0) {
-            
+        if (strcmp(key_node->key, key) == 0) { // If the key is found, update the value
+            avl_add(key_node->avl_notif_fds, client_id, notif_fd);
+            return 0;
         }
         key_node = key_node->next; // Move to the next node
     }
@@ -177,9 +186,9 @@ int unsubscribe_pair(HashTable *ht, char key[MAX_STRING_SIZE + 1], int client_id
     KeyNode *key_node = index_list->head;
     // Search for the key node
     while (key_node != NULL) {
-        // If the key is found, update the value
-        if (strcmp(key_node->key, key) == 0) {
-            
+        if (strcmp(key_node->key, key) == 0) { // If the key is found, update the value
+            avl_remove(key_node->avl_notif_fds, client_id);
+            return 0;
         }
         key_node = key_node->next; // Move to the next node
     }

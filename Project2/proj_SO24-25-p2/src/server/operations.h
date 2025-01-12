@@ -50,7 +50,7 @@ int kvs_show(int fd);
 /// @return 0 if the backup was successful, -1 otherwise.
 int kvs_backup(int fd);
 
-int kvs_disconnect();
+int kvs_disconnect(int client_id);
 
 int kvs_subscribe(int session_id, int notif_pipe_fd, char key[MAX_STRING_SIZE + 1]);
 

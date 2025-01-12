@@ -30,8 +30,6 @@ typedef struct JobThreadArgs {
 
 //Clients struct
 typedef struct ClientData { // Unlock the hash table's index list that have been locked
-  for (size_t ind = 0; ind < 26; ind++)
-    if (is_locked[ind]) hash_table_list_unlock(ind);
   char req_pipe_path[MAX_PIPE_PATH_LENGTH];   // Request pipe path.
   char resp_pipe_path[MAX_PIPE_PATH_LENGTH];  // Response pipe path.
   char notif_pipe_path[MAX_PIPE_PATH_LENGTH]; // Notification pipe path.////////////////////////////////////////////////////77777
@@ -359,7 +357,7 @@ void *client_thread(void *args) {
 
         case OP_CODE_DISCONNECT:
 
-          kvs_disconnect();
+          kvs_disconnect(client->data.subscribed_keys, session_id);
 
           close(req_pipe_fd);
           close(resp_pipe_fd);
@@ -368,6 +366,7 @@ void *client_thread(void *args) {
           break;
 
         case OP_CODE_SUBSCRIBE:
+
           response_connection[0] = OP_CODE_SUBSCRIBE;
           response_connection[1] = '1';
           if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, interrupted_read)) < 0){
@@ -377,8 +376,12 @@ void *client_thread(void *args) {
             perror("Got EOF while trying to read key from client.");
             break;
           }
-          if(kvs_subscribe(session_id, notif_pipe_fd, key) == 0){
-            response_connection[1] = '0';
+          if(client->data.subscribed_count < MAX_NUMBER_SUB){
+            if(kvs_subscribe(session_id, notif_pipe_fd, key) == 0){
+              response_connection[1] = '0';
+              client->data.subscribed_count++;
+              avl_add(client->data.subscribed_keys, key, -1);
+            }
           }
           if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
             perror("Error writing OP_CODE and result to response pipe");
@@ -386,6 +389,7 @@ void *client_thread(void *args) {
           break;
 
         case OP_CODE_UNSUBSCRIBE:
+
           response_connection[0] = OP_CODE_UNSUBSCRIBE;
           response_connection[1] = '1';
           if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, interrupted_read)) < 0){
@@ -397,12 +401,13 @@ void *client_thread(void *args) {
           }
           if(kvs_unsubscribe(session_id, notif_pipe_fd, key) == 0){
             response_connection[1] = '0';
+            client->data.subscribed_count--;
+            avl_remove(client->data.subscribed_keys, key);
           }
           if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
             perror("Error writing OP_CODE and result to response pipe");
           }
           break;
-
       }
     }
   }
