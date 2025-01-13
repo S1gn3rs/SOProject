@@ -8,6 +8,8 @@
 #include <stdatomic.h>
 #include <stdbool.h>
 
+#include <signal.h>
+
 #include "parser.h"
 #include "src/client/api.h"
 #include "src/common/constants.h"
@@ -20,8 +22,15 @@ pthread_mutex_t stdout_mutex;
 
 atomic_bool terminate = false;
 
+pthread_t main_thread_id;
+
+void signal_handler(int signum) {
+  if (signum == SIGUSR1){};
+}
+
 void* notif_function(void *args){
   (void)args;  // Ignore the unused parameter
+  // pthread_t main_id = *(pthread_t *)args;
 
   ssize_t bytes_read;
   char buffer[(MAX_STRING_SIZE + 1) * 2];
@@ -36,11 +45,10 @@ void* notif_function(void *args){
       (MAX_STRING_SIZE + 1) * 2, &interrupted_read);
 
     if (bytes_read <= 0 || errno == EPIPE) {
-      // if (bytes_read == 0) {
-      //   printf("Notification pipe closed\n");
-      //   break; // End of file or pipe closed
-      // }
-      perror("Error reading key from notification pipe");
+
+      if (pthread_kill(main_thread_id, SIGUSR1) != 0) {
+        perror("Failed to send SIGUSR1 to main thread");
+      }
       atomic_store(&terminate, true);
       break;
     }
@@ -72,8 +80,6 @@ void* notif_function(void *args){
     }
 
   }
-
-  //close(client_notifications_fd); // Close the notification file descriptor when done
   return NULL;
 }
 
@@ -88,6 +94,9 @@ int main(int argc, char* argv[]) {
   char resp_pipe_path[256] = "/tmp/resp";
   char notif_pipe_path[256] = "/tmp/notif";
   char server_pipe_path[MAX_PIPE_PATH_LENGTH + 6];
+
+  int req_pipe_fd;
+  int resp_pipe_fd;
 
   pthread_t notif_thread;
 
@@ -105,33 +114,43 @@ int main(int argc, char* argv[]) {
   strncat(resp_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(notif_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
 
-  // TODO open pipes
+  if (kvs_connect(req_pipe_path, resp_pipe_path, server_pipe_path,\
+    notif_pipe_path, &req_pipe_fd, &resp_pipe_fd, &client_notifications_fd,\
+    &stdout_mutex, &terminate) != 0) {
 
-  if (kvs_connect(req_pipe_path, resp_pipe_path, server_pipe_path, notif_pipe_path, &client_notifications_fd, &stdout_mutex, &terminate) != 0) {
     pthread_mutex_destroy(&stdout_mutex);
     return 1;
   }
 
+    // Register signal handler for SIGUSR1
+  if (signal(SIGUSR1, signal_handler) == SIG_ERR) {
+      perror("Failed to set up signal handler");
+      return 1;
+  }
+  // Get the main thread ID
+  main_thread_id = pthread_self();
+
+
   if (pthread_create(&notif_thread, NULL, notif_function,\
-    NULL) != 0){
+    (void*) &main_thread_id) != 0){
 
     fprintf(stderr, "Error: Unable to create notifications thread \n");
     pthread_mutex_destroy(&stdout_mutex);
     return 1;
   }
 
+
   while (1) {
 
     if (atomic_load(&terminate)) {
-        printf("Termination signal received. Cleaning up...\n");
 
         if (pthread_join(notif_thread, NULL) != 0) {
             fprintf(stderr, "Error: Unable to join notifications thread.\n");
         }
 
         pthread_mutex_destroy(&stdout_mutex);
-        // close(api_req_pipe_fd);
-        // close(api_resp_pipe_fd);
+        close(req_pipe_fd);
+        close(resp_pipe_fd);
         close(client_notifications_fd);
         unlink(req_pipe_path);
         unlink(resp_pipe_path);
@@ -140,26 +159,19 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    printf("Enter command: \n");
-
     switch (get_next(STDIN_FILENO)) {
       case CMD_DISCONNECT:
         if (kvs_disconnect(&stdout_mutex, &terminate) != 0) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           return 1;
         }
-        // TODO: end notifications thread
-
-        printf("Waiting for notifications thread to join\n");
 
         if (pthread_join(notif_thread, NULL) != 0) {
           fprintf(stderr, "Error: Unable to join notifications thread.\n");
         }
 
-        printf("Notifications thread joined\n");
         pthread_mutex_destroy(&stdout_mutex);
         unlink(notif_pipe_path);
-        printf("Disconnected from server\n");
         return 0;
 
       case CMD_SUBSCRIBE:
@@ -172,7 +184,6 @@ int main(int argc, char* argv[]) {
         if (kvs_subscribe(keys[0], &stdout_mutex, &terminate)) {
             fprintf(stderr, "Command subscribe failed\n");
         }
-
         break;
 
       case CMD_UNSUBSCRIBE:

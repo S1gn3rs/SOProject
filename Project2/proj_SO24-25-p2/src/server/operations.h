@@ -121,18 +121,22 @@ pthread_mutex_t* get_mutex(int sessions_id);
 /// @param session_id Session ID.
 void reset_num_subs(int session_id);
 
+
 /// Increment the number of subscriptions of a session.
 /// @param session_id Session ID.
 void inc_num_subs(int session_id);
+
 
 /// Decrement the number of subscriptions of a session.
 /// @param session_id Session ID.
 void dec_num_subs(int session_id);
 
+
 /// Disconnects a client and removes it from the client AVL tree.
 /// @param client_id Client ID.
 /// @return 0 if the client was disconnected successfully, -1 otherwise.
 int kvs_disconnect(int client_id);
+
 
 /// Subscribes a client to a key and adds the key to the session AVL tree.
 /// @param client_id Client ID.
@@ -141,20 +145,24 @@ int kvs_disconnect(int client_id);
 /// @return 0 if the client was subscribed successfully, -1 otherwise.
 int kvs_subscribe(int client_id, int notif_fd, char *key);
 
+
 /// Unsubscribes a client from a key and removes the key from the session AVL tree.
 /// @param client_id Client ID.
 /// @param key Key to unsubscribe from.
 /// @return 0 if the client was unsubscribed successfully, -1 otherwise.
 int kvs_unsubscribe(int client_id, char *key);
 
+
 /// Initializes a session AVL tree.
 /// @param session_id Session ID.
 /// @return 0 if the session AVL tree was initialized successfully, -1 otherwise.
 int initialize_session_avl(int session_id);
 
+
 /// Cleans a session AVL tree.
 /// @param session_id Session ID.
 void clean_session_avl(int session_id);
+
 
 /// Adds a key to the session AVL tree.
 /// @param session_id Session ID.
@@ -162,11 +170,13 @@ void clean_session_avl(int session_id);
 /// @return 0 if the key was added successfully, -1 otherwise.
 int add_key_session_avl(int session_id, const char *key);
 
+
 /// Removes a key from the session AVL tree.
 /// @param session_id Session ID.
 /// @param key Key to remove.
 /// @return 0 if the key was removed successfully, -1 otherwise.
 int remove_key_session_avl(int session_id, const char *key);
+
 
 /// Waits for a given amount of time.
 /// @param delay_ms Delay in milliseconds.

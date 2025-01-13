@@ -108,7 +108,7 @@ enum Command get_next(int fd) {
       return CMD_SUBSCRIBE;
 
     case 'U':
-      if (read(fd, buf + 1, 11) != 11 || strncmp(buf, "UNSUBSCRIBE ", 12) != 0) {
+      if (read(fd, buf + 1, 11) != 11 || strncmp(buf, "UNSUBSCRIBE ", 12) != 0){
         cleanup(fd);
         return CMD_INVALID;
       }
@@ -143,7 +143,9 @@ enum Command get_next(int fd) {
   }
 }
 
-size_t parse_list(int fd, char keys[][MAX_STRING_SIZE], size_t max_keys, size_t max_string_size) {
+size_t parse_list(int fd, char keys[][MAX_STRING_SIZE], size_t max_keys,\
+  size_t max_string_size) {
+
   char ch;
 
   if (read(fd, &ch, 1) != 1 || ch != '[') {

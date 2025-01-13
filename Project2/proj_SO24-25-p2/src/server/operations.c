@@ -85,12 +85,10 @@ void clean_session_avl(int session_id){
 
   data = get_client_info(session_id);
   if (data != NULL){
-    printf("notif: %d -- request: %d -- resp: %d\n", data->notif_pipe_fd, data->req_pipe_fd, data->resp_pipe_fd);
     close(data->notif_pipe_fd);
     close(data->req_pipe_fd);
     close(data->resp_pipe_fd);
     free(data);
-    data = NULL;
   }
 
   reset_num_subs(session_id);
@@ -171,15 +169,8 @@ int avl_clean_sessions() {
     return -1;
   }
   for (int session_id = 0; session_id < MAX_SESSION_COUNT; session_id++){
-    printf("INICIO????? %d\n", session_id);
-    ClientData *data = get_client_info(session_id);
-    printf("AQUI????? %d\n", session_id);
     clean_session_avl(session_id);
-    printf("DEPOIS DE AQUI????? %d\n", session_id);
-
-    printf("DEPOIS DE DEPOIS DE AQUI????? %d\n", session_id);
   }
-  printf("FIMMMMMMMMMMMMMMMMMMMMMMMM\n");
   return 0;
 }
 
@@ -645,7 +636,7 @@ int kvs_disconnect(int client_id){
   if(apply_to_all_nodes(avl, kvs_remove_subscription, client_id) != 0)
     return -1;
 
-  clean_session_avl(client_id);
+  //clean_session_avl(client_id);
 
   return 0;
 }
@@ -689,7 +680,6 @@ int kvs_subscribe(int client_id, int notif_fd, char *key){
   if (add_key_session_avl(client_id, key) != 0) {
     hash_table_list_unlock(indexList);
     hash_table_unlock();
-    printf("Error adding key to session avl\n");
     return -1;
   }
 

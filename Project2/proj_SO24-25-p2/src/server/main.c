@@ -10,6 +10,8 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <signal.h>
+#include <errno.h>
+
 
 #include "constants.h"
 #include "parser.h"
@@ -27,7 +29,6 @@ typedef struct JobThreadArgs {
   char *dir_name;           // Directory name.
   size_t dir_length;        // Directory name length.
 }JobThreadArgs;
-
 
 
 //Client Node
@@ -335,7 +336,7 @@ void* client_thread(void *args) {
     char response_connection[2]; // OP_CODE | result
     int client_connected = 1; // Client session state
 
-    clean_session_avl(session_id); // Clean old subsc. nodes by other clients.
+    //clean_session_avl(session_id); // Clean old subsc. nodes by other clients.
     // Wait for a client to be added to the queue.
     sem_wait(&sem_remove_from_queue);
     pthread_mutex_lock(&queue_mutex);
@@ -359,12 +360,16 @@ void* client_thread(void *args) {
     if (data->resp_pipe_fd == -1){
       free(data);
       perror("Error opening client response pipe");
-      continue;;
+      continue;
     }
 
     data->req_pipe_fd = open(data->req_pipe_path, O_RDONLY);
     if (data->req_pipe_fd == -1){ // Failed in connection (open request pipe failed)
+    errno = 0;
       if (write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+        if (errno == EPIPE) {
+            perror("EPIPE error occurred while writing to response pipe.");
+        }
         perror("Error writing OP_CODE and result to response pipe");
       }
       perror("Error opening client request pipe");
@@ -375,7 +380,11 @@ void* client_thread(void *args) {
 
     data->notif_pipe_fd = open(data->notif_pipe_path, O_WRONLY);
     if (data->notif_pipe_fd == -1){ // Failed in connection (open notif pipe failed)
+      errno = 0;
       if (write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+        if (errno == EPIPE) {
+            perror("EPIPE error occurred while writing to response pipe.");
+        }
         perror("Error writing OP_CODE and result to response pipe");
       }
       perror("Error opening client notification pipe");
@@ -387,13 +396,17 @@ void* client_thread(void *args) {
 
     response_connection[1] = '0';
 
+    errno = 0;
     if (write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1) {
-        perror("Error writing OP_CODE and result to response pipe");
-        close(data->resp_pipe_fd);
-        close(data->req_pipe_fd);
-        close(data->notif_pipe_fd);
-        free(data);
-        continue;
+      if (errno == EPIPE) {
+          perror("EPIPE error occurred while writing to request pipe.");
+      }
+      perror("Error writing OP_CODE and result to response pipe");
+      close(data->resp_pipe_fd);
+      close(data->req_pipe_fd);
+      close(data->notif_pipe_fd);
+      free(data);
+      continue;
     }
 
     set_client_info(session_id, data); // Store info
@@ -410,7 +423,7 @@ void* client_thread(void *args) {
         close(data->req_pipe_fd);
         close(data->notif_pipe_fd);
         free(data);
-        perror("Couldn't read message from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
+        perror("Couldn't read message from client.");
         continue;
       }else if(read_output == 0){
         close(data->resp_pipe_fd);
@@ -428,24 +441,28 @@ void* client_thread(void *args) {
           response_connection[0] = OP_CODE_DISCONNECT;
           response_connection[1] = '1';
 
-
           if(kvs_disconnect(session_id) != 0){
+            errno = 0;
             if(write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+              if (errno == EPIPE) {
+                  perror("EPIPE error occurred while writing to response pipe.");
+              }
               perror("Error writing OP_CODE and result to response pipe");
               continue;
             }
           }
 
           response_connection[1] = '0';
-
+          errno = 0;
           if(write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+            if (errno == EPIPE) {
+                perror("EPIPE error occurred while writing to response pipe.");
+            }
             perror("Error writing OP_CODE and result to response pipe");
           }
 
-          close(data->req_pipe_fd);
-          close(data->resp_pipe_fd);
-          close(data->notif_pipe_fd);
-          free(data);
+          clean_session_avl(session_id);
+
           client_connected = 0;
           break;
 
@@ -454,7 +471,7 @@ void* client_thread(void *args) {
           response_connection[0] = OP_CODE_SUBSCRIBE;
           response_connection[1] = '0';
           if ((read_output = read_all(data->req_pipe_fd, key, MAX_STRING_SIZE + 1, &interrupted_read)) < 0){
-            perror("Couldn't read key from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
+            perror("Couldn't read key from client.");
             break;
           }else if(read_output == 0){
             perror("Got EOF while trying to read key from client.");
@@ -464,7 +481,11 @@ void* client_thread(void *args) {
             response_connection[1] = '1';
             add_key_session_avl(session_id, key);
           }
+          errno = 0;
           if(write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+            if (errno == EPIPE) {
+                perror("EPIPE error occurred while writing to response pipe.");
+            }
             perror("Error writing OP_CODE and result to response pipe");
           }
           break;
@@ -474,7 +495,7 @@ void* client_thread(void *args) {
           response_connection[0] = OP_CODE_UNSUBSCRIBE;
           response_connection[1] = '1';
           if ((read_output = read_all(data->req_pipe_fd, key, MAX_STRING_SIZE + 1, &interrupted_read)) < 0){
-            perror("Couldn't read key from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
+            perror("Couldn't read key from client.");
             break;
           }else if(read_output == 0){
             perror("Got EOF while trying to read key from client.");
@@ -484,7 +505,11 @@ void* client_thread(void *args) {
             response_connection[1] = '0';
             remove_key_session_avl(session_id, key);
           }
+          errno = 0;
           if(write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+            if (errno == EPIPE) {
+                perror("EPIPE error occurred while writing to response pipe.");
+            }
             perror("Error writing OP_CODE and result to response pipe");
           }
           break;
@@ -503,6 +528,8 @@ int main(int argc, char *argv[]) {
     argv[0]);
     return -1;
   }
+
+  signal(SIGPIPE, SIG_IGN);
 
   size_t length_dir_name = strlen(argv[1]);
   int server_pipe_fd;
@@ -640,44 +667,28 @@ int main(int argc, char *argv[]) {
   }
 
   while (1){
-    int DEBUG = 0;
 
     if(sig_flag == 1){
       avl_clean_sessions();
       sig_flag = 0;
-      DEBUG = 1;
     }
-
-    if (DEBUG) printf("DEBUG11 \n");
 
     size_t length_client_con = 1 + (MAX_PIPE_PATH_LENGTH + 1) * 3;
     char client_connection[length_client_con];
     char *aux_client_conn;
-    int interrupted_read = 0;////////////////// dar handle aqui e na api tmb ///////////////////////////////////////////////////////////////
-    int read_output;
+    int interrupted_read = sig_flag;
     ClientNode *client;
     ClientData *data;
 
-    if ((read_output = read_all(server_pipe_fd, client_connection, length_client_con, &interrupted_read)) < 0){
-      if (interrupted_read) {
-        continue;
-      }
-      perror("Couldn't read connection message from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
-      break;
+    if(read_all(server_pipe_fd, client_connection, length_client_con, &interrupted_read) <= 0){
+      perror("Couldn't read message from client.");
+      continue;
     }
-    // Not expected due to how the fifo was opened but included as a precaution.
-    else if(read_output == 0){
-      perror("Got EOF while trying to read message from client.");
-      break;
-    }
-    if (DEBUG) printf("DEBUG22 \n");
 
     if (*client_connection != OP_CODE_CONNECT){
       fprintf(stderr, "Message from client had OPCODE: %c instead of OPCODE: 1.\n", client_connection[0]);
       continue;
     }
-
-    if (DEBUG) printf("DEBUG33 \n");
 
     client = malloc(sizeof(ClientNode));
     if (client == NULL){
@@ -717,9 +728,6 @@ int main(int argc, char *argv[]) {
 
   }
 
-  // DAQUI PARA BAIXO ACHO QUE NÃO É PRECISO NADA E PELA CONVERSA COM O STOR PODEMOS MANTER OU ELIMINAR --------------------------------------------
-
-
   // Wait for the threads to finish.
   for (int i = 0; i < max_threads; i++) {
     if (job_threads_error[i]) continue; // Skip if there was an error
@@ -741,11 +749,10 @@ int main(int argc, char *argv[]) {
   // Close the directory.
   closedir(directory);
 
-  unlink(server_pipe_path);     // Close the server pipe in case of error.
+  unlink(server_pipe_path);// Close the server pipe.
 
   // Destroy the global mutex.
   pthread_mutex_destroy(&mutex);
-
 
   // Terminate the KVS.
   kvs_terminate();

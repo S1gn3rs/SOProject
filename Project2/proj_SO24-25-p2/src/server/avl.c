@@ -400,16 +400,12 @@ AVL *create_avl() {
 
 
 int avl_add(AVL *avl, void* key, int fd) {
-    printf("secure\n");
     if (avl_wrlock_secure(avl)) return -1;
 
-    printf("secure\n");
     avl->root = insert_node(avl->root, key, fd);
 
-    printf("unlock\n");
     avl_unlock_secure(avl);
 
-    printf("unlocked\n");
     return 0;
 }
 
@@ -558,6 +554,7 @@ int apply_to_all_nodes_recursive(AVLNode *node, int (*func)(int, char *),\
     int error = 0;
 
     if (node) {
+
         // Apply function to left sub-tree
         apply_to_all_nodes_recursive(get_left_node(node), func, int_value);
         // Apply function to current node
@@ -575,8 +572,9 @@ int apply_to_all_nodes(AVL *avl, int (*func)(int, char *), int int_value) {
     if (!avl){
         return -1;
     }
-    if (!get_root(avl)) return 0;
-
+    if (!get_root(avl)){
+        return 0;
+    }
     if (avl_rdlock_secure(avl)){
         return -1;
     }
@@ -589,5 +587,6 @@ int apply_to_all_nodes(AVL *avl, int (*func)(int, char *), int int_value) {
     error = apply_to_all_nodes_recursive(get_root(avl), func, int_value);
 
     avl_unlock_secure(avl);
+
     return error ? -1 : 0;
 }

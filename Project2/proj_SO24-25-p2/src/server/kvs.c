@@ -213,7 +213,6 @@ int delete_pair(HashTable *ht, AVLSessions *avl_sessions, const char *key,\
                 // Link the previous node to the next node
                 prevNode->next = key_node->next;
             }
-
             send_to_all_fds(key_node->avl_notif_fds, notif_message,\
                 2 * MAX_STRING_SIZE + 2);
 
