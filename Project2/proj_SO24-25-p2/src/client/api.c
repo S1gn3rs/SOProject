@@ -1,6 +1,5 @@
 #include "api.h"
-
-
+#include "pthread.h"
 
 char api_req_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
 char api_resp_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
@@ -11,7 +10,7 @@ int api_resp_pipe_fd;
 
 // create pipes and connect
 int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path,
-                char const* notif_pipe_path, int* client_notif_pipe_fd) {
+                char const* notif_pipe_path, int* client_notif_pipe_fd, pthread_mutex_t* stdout_mutex) {
   size_t length_con_buffer = 1 + (MAX_PIPE_PATH_LENGTH + 1) * 3;
   char connection_buffer[length_con_buffer];
   char *cur_buffer_pos;
@@ -111,13 +110,17 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
     close(*client_notif_pipe_fd);
   }
 
+  pthread_mutex_lock(stdout_mutex);
+
   fprintf(stdout, "Server returned %c for operation: connect\n", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
+
+  pthread_mutex_unlock(stdout_mutex);
 
   return (response_buffer[1] == '0') ? 0 : 1;
 }
 
 // close pipes and unlink pipe files
-int kvs_disconnect(void) {
+int kvs_disconnect(pthread_mutex_t* stdout_mutex) {
   char response_buffer[2];
   int interrupted_read = 0;
   char opcode = OP_CODE_DISCONNECT;
@@ -131,7 +134,11 @@ int kvs_disconnect(void) {
     return 1;
   }
 
+  pthread_mutex_lock(stdout_mutex);
+
   fprintf(stdout, "Server returned %c for operation: disconnect\n", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
+
+  pthread_mutex_unlock(stdout_mutex);
 
   if(response_buffer[1] != '0') return 1;
 
@@ -139,12 +146,14 @@ int kvs_disconnect(void) {
   close(api_resp_pipe_fd);
   unlink(api_req_pipe_path);
   unlink(api_resp_pipe_path);
+
+  printf("API disconnected.\n");
   return 0;
 }
 
 
 // send subscribe message to request pipe and wait for response in response pipe
-int kvs_subscribe(const char* key) {
+int kvs_subscribe(const char* key, pthread_mutex_t* stdout_mutex) {
   char subscribe_buffer[MAX_STRING_SIZE + 2];
   char response_buffer[2];
   int interrupted_read = 0;
@@ -160,13 +169,17 @@ int kvs_subscribe(const char* key) {
     return 1;
   }
 
+  pthread_mutex_lock(stdout_mutex);
+
   fprintf(stdout, "Server returned %c for operation: subscribe\n", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
 
-  return (response_buffer[1] == '0') ? 0 : 1;
+  pthread_mutex_unlock(stdout_mutex);
+
+  return (response_buffer[1] == '1') ? 0 : 1;
 }
 
 // send unsubscribe message to request pipe and wait for response in response pipe
-int kvs_unsubscribe(const char* key) {
+int kvs_unsubscribe(const char* key, pthread_mutex_t* stdout_mutex) {
   char unsubscribe_buffer[MAX_STRING_SIZE + 2];
   char response_buffer[2];
   int interrupted_read = 0;
@@ -182,7 +195,11 @@ int kvs_unsubscribe(const char* key) {
     return 1;
   }
 
+  pthread_mutex_lock(stdout_mutex);
+
   fprintf(stdout, "Server returned %c for operation: unsubscribe\n", response_buffer[1]); //////////checkar se é ok usar fprintf ou se temos de mudar
+
+  pthread_mutex_unlock(stdout_mutex);
 
   return (response_buffer[1] == '0') ? 0 : 1;
 }

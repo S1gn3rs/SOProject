@@ -1,22 +1,36 @@
-#Leitura de chave inexistente
-#READ [c1]
-#Criação e escrita de 2 chaves
-#WRITE [(c1,v1)(chave2,valor-exemplo)(chave3,valor-exemplo3)(a2,valor4)]
-#WRITE [(a2,v1)]
-#Leitura de chave existente
-#READ [chave2]
-#Escrita de uma chave nova e outra existente
-#WRITE [(a2,B)]
-#WRITE [(chave3,valor-exemplo2)(umaChave,umValor)]
+READ [c1]
+WRITE [(A,1)(B,0)(c1,v1)(chave2,valor-exemplo)(chave3,valor-exemplo3)(C,valor4)]
+WRITE [(1,1)(2,0)(3,v1)(4,1)(5,0)(6,v1)(7,1)(8,0)(9,v1)(a,1)(b,0)(c,v1)]
+
+WAIT 20000
+WRITE [(1,1)(2,0)(3,v1)(4,1)(5,0)(6,v1)(7,1)(8,0)(9,v1)(a,1)(b,0)(c,v1)]
+
+# WRITE [(a2,v1)]
+# READ [chave2]
+# WRITE [(a2,B)]
+# WRITE [(chave3,valor-exemplo2)(umaChave,umValor)]
 
 
 
-#backup
-#BACKUP
-# Eliminação de chave existente e de chave não existente
+# BACKUP
+WRITE [(c1,valor-exemplo2)]
+WRITE [(A,1)(B,0)(c1,v1)(chave2,valor-exemplo)(chave3,valor-exemplo3)(C,valor4)]
 #DELETE [c1,chaveAleatoria]
-#WRITE [(cbhave2,valor-exemplo2)(umaChave,umValor)]
-#DELETE [c1,chaveAleatoria]
-#WRITE [(cave2,valor-exemplo2)(umaChave,umValor)]
-#DELETE [umaChave]
-#BACKUP
+# WRITE [(cbhave2,valor-exemplo2)(umaChave,umValor)]
+# DELETE [c1,chaveAleatoria]
+DELETE [B,C,A]
+#DELETE [1,2,3,4,5,6,7,8,9,a,b,c]
+DELETE [1]
+
+WAIT 8000
+
+WRITE [(1,1)(2,0)(3,v1)(4,1)(5,0)(6,v1)(7,1)(8,0)(9,v1)(a,1)(b,0)(c,v1)]
+WRITE [(1,1)(2,0)(3,v1)(4,1)(5,0)(6,v1)(7,1)(8,1)(9,v1)(a,1)(b,0)(c,v1)]
+
+WRITE [(cave2,valor-exemplo2)(umaChave,umValor)]
+# DELETE [umaChave]
+# BACKUP
+
+#        SUBSCRIBE [1]
+#        SUBSCRIBE [3]
+#        SUBSCRIBE [8]

@@ -6,8 +6,8 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/wait.h>
-#include <pthread.h>
 #include <sys/stat.h>
+#include <pthread.h>
 #include <semaphore.h>
 
 #include "constants.h"
@@ -29,12 +29,10 @@ typedef struct JobThreadArgs {
 
 
 //Clients struct
-typedef struct ClientData { // Unlock the hash table's index list that have been locked
+typedef struct ClientData {
   char req_pipe_path[MAX_PIPE_PATH_LENGTH];   // Request pipe path.
   char resp_pipe_path[MAX_PIPE_PATH_LENGTH];  // Response pipe path.
-  char notif_pipe_path[MAX_PIPE_PATH_LENGTH]; // Notification pipe path.////////////////////////////////////////////////////77777
-  struct AVL *subscribed_keys;
-  int subscribed_count;
+  char notif_pipe_path[MAX_PIPE_PATH_LENGTH]; // Notification pipe path.
 }ClientData;
 
 
@@ -49,7 +47,6 @@ typedef struct ClientNode{
 typedef struct Queue{
   struct ClientNode* head;
   struct ClientNode* tail;
-  size_t size; //////////////////////////////////////////////////////////////////////////////77777
 }Queue;
 
 
@@ -57,7 +54,7 @@ int max_backups = 1;          // Max number of concurrent backups.
 int active_backups = 0;       // Number of active backups.
 DIR *directory;               // Directory to process.
 
-Queue queue = {NULL, NULL, 0};
+Queue queue = {NULL, NULL};// Queue to hold clients before getting a session.
 
 pthread_mutex_t queue_mutex; // Global mutex to protect the changes on the queue.
 
@@ -65,9 +62,12 @@ sem_t sem_remove_from_queue;
 sem_t sem_add_to_queue;
 
 
-
-// Thread function to process the .job files.
-void *do_commands(void *args) {
+/**
+ * Thread function to process the .job files.
+ *
+ * @param args Arguments (struct) passed to the thread function.
+ * @return NULL on completion.
+ */void *do_commands(void *args) {
   struct dirent *entry;       // Directory entry.
   size_t length_entry_name;   // Get the file name len.
 
@@ -285,12 +285,29 @@ void *do_commands(void *args) {
 }
 
 
-void *client_thread(void *args) {
+/**
+ * Thread function to handle client connections.
+ *
+ * @param args Pointer to the session ID (int) for the client.
+ * @return NULL on completion.
+ */
+void* client_thread(void *args) {
   int session_id =  *(int*) args;
-  
-  while(1){
-    ClientNode* client;
 
+  // Initialize the AVL tree for the session.
+  if (initialize_session_avl(session_id)){
+    perror("Couldn't create session avl.");
+    return NULL;
+  }
+
+  while(1){
+    ClientNode *client;
+    char response_connection[2]; // OP_CODE | result
+
+
+    clean_session_avl(session_id); // Clean old subsc. nodes by other clients.
+
+    // Wait for a client to be added to the queue.
     sem_wait(&sem_remove_from_queue);
     pthread_mutex_lock(&queue_mutex);
 
@@ -299,21 +316,19 @@ void *client_thread(void *args) {
     if (queue.head == NULL) {
       queue.tail = NULL;
     }
-    queue.size--;
 
     pthread_mutex_unlock(&queue_mutex);
     sem_post(&sem_add_to_queue);
 
-    char response_connection[2]; // OP_CODE=1| result
     response_connection[0] = OP_CODE_CONNECT;
-    response_connection[1] = '1'; // Result starts as 1 and changes to 0 on success.
+    response_connection[1] = '1'; // Result is 1 and changes to 0 on success.
 
     int resp_pipe_fd = open(client->data.resp_pipe_path, O_WRONLY);
     if (resp_pipe_fd == -1){
       perror("Error opening client response pipe");
       return NULL;
     }
-
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     int req_pipe_fd = open(client->data.req_pipe_path, O_RDONLY);
     if (req_pipe_fd == -1){
       if (write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1) { ////////////////////////////// verificar
@@ -359,6 +374,8 @@ void *client_thread(void *args) {
           response_connection[0] = OP_CODE_DISCONNECT;
           response_connection[1] = '1';
 
+          printf("Client disconnecting.\n");
+
           if(kvs_disconnect(session_id) != 0){
             if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
               perror("Error writing OP_CODE and result to response pipe");
@@ -366,7 +383,7 @@ void *client_thread(void *args) {
             }
           }
 
-          response_connection[0] = '0';
+          response_connection[1] = '0';
 
           if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
             perror("Error writing OP_CODE and result to response pipe");
@@ -374,6 +391,7 @@ void *client_thread(void *args) {
 
           close(req_pipe_fd);
           close(resp_pipe_fd);
+          close(notif_pipe_fd);
           free(client);
           client_connected = 0;
           break;
@@ -381,7 +399,7 @@ void *client_thread(void *args) {
         case OP_CODE_SUBSCRIBE:
 
           response_connection[0] = OP_CODE_SUBSCRIBE;
-          response_connection[1] = '1';
+          response_connection[1] = '0';
           if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, &interrupted_read)) < 0){
             perror("Couldn't read key from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
             break;
@@ -389,12 +407,9 @@ void *client_thread(void *args) {
             perror("Got EOF while trying to read key from client.");
             break;
           }
-          if(client->data.subscribed_count < MAX_NUMBER_SUB){
-            if(kvs_subscribe(session_id, notif_pipe_fd, key) == 0){
-              response_connection[1] = '0';
-              client->data.subscribed_count++;
-              avl_add(client->data.subscribed_keys, key, -1);
-            }
+          if(kvs_subscribe(session_id, notif_pipe_fd, key) == 0){
+            response_connection[1] = '1';
+            add_key_session_avl(session_id, key);
           }
           if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
             perror("Error writing OP_CODE and result to response pipe");
@@ -414,8 +429,7 @@ void *client_thread(void *args) {
           }
           if(kvs_unsubscribe(session_id, key) == 0){
             response_connection[1] = '0';
-            client->data.subscribed_count--;
-            avl_remove(client->data.subscribed_keys, key);
+            remove_key_session_avl(session_id, key);
           }
           if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
             perror("Error writing OP_CODE and result to response pipe");
@@ -425,7 +439,6 @@ void *client_thread(void *args) {
     }
   }
 }
-
 
 
 int main(int argc, char *argv[]) {
@@ -503,12 +516,23 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
+  // Initialize the AVL sessions.
+  if (avl_sessions_init()) {
+    fprintf(stderr, "Failed to initialize AVL sessions\n");
+    close(server_pipe_fd);
+    unlink(server_pipe_path);
+    closedir(directory);
+    kvs_terminate();
+    return -1;
+  }
+
   // Initialize the global mutex
   if(pthread_mutex_init(&mutex, NULL)){
     fprintf(stderr, "Failed to initialize the mutex\n");
     close(server_pipe_fd);
     unlink(server_pipe_path);     // Close the server pipe in case of error.
     closedir(directory);
+    kvs_terminate();
     return -1;
   }
 
@@ -584,8 +608,6 @@ int main(int argc, char *argv[]) {
     //   //while (1) printf("break\n");///////////////////////////////////////////////////////////////////////////////////////////////
     // }
 
-    printf("Received connection message from client.\n");
-
     if (*client_connection != OP_CODE_CONNECT){
       fprintf(stderr, "Message from client had OPCODE: %c instead of OPCODE: 1.\n", client_connection[0]);
       continue;
@@ -599,12 +621,6 @@ int main(int argc, char *argv[]) {
 
     client->next = NULL;
     data = &client->data;
-    data->subscribed_count = 0;
-    data->subscribed_keys = create_avl();
-    if (data->subscribed_keys == NULL){
-      perror("could not create an AVL for subscribed keys.");
-      continue;
-    }
 
     aux_client_conn = client_connection + 1;
     safe_strncpy(data->req_pipe_path, aux_client_conn, MAX_PIPE_PATH_LENGTH + 1);
@@ -623,8 +639,6 @@ int main(int argc, char *argv[]) {
       queue.tail->next = client;
 
     queue.tail = client;
-    queue.size++;
-
 
     sem_post(&sem_remove_from_queue); // Let a thread get one client from the queue.
 
@@ -662,6 +676,9 @@ int main(int argc, char *argv[]) {
 
   // Terminate the KVS.
   kvs_terminate();
+
+  // Terminate the AVL sessions.
+  avl_sessions_terminate();
 
   // Wait for the backups to finish.
   while (active_backups-- > 0){

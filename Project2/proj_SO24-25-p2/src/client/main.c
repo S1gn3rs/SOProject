@@ -9,13 +9,17 @@
 #include "src/client/api.h"
 #include "src/common/constants.h"
 #include "src/common/io.h"
+#include "src/common/safeFunctions.h"
 
 int client_notifications_fd;
+
+pthread_mutex_t stdout_mutex;
 
 void* notif_function(void *args){
   (void)args;  // Ignore the unused parameter
 
-  ssize_t bytes_read1, bytes_read2;
+  ssize_t bytes_read;
+  char buffer[(MAX_STRING_SIZE + 1) * 2];
   char key[MAX_STRING_SIZE + 1];
   char value[MAX_STRING_SIZE + 1];
   char message[MAX_STRING_SIZE * 2 + 5];
@@ -23,32 +27,41 @@ void* notif_function(void *args){
 
   while (1) {
 
-    bytes_read1 = read_all(client_notifications_fd, key, MAX_STRING_SIZE, &interrupted_read);
-    if (bytes_read1 <= 0) {
-      if (bytes_read1 == 0) {
+    bytes_read = read_all(client_notifications_fd, buffer, (MAX_STRING_SIZE + 1) * 2, &interrupted_read);
+    if (bytes_read <= 0) {
+      if (bytes_read == 0) {
         break; // End of file or pipe closed
       }
       perror("Error reading key from notification pipe");
       break;
     }
-    key[bytes_read1] = '\0';
 
-    interrupted_read = 0;
-    bytes_read2 = read_all(client_notifications_fd, value, MAX_STRING_SIZE, &interrupted_read);
-    if (bytes_read2 <= 0) {
-      if (bytes_read2 == 0) {
-        break; // End of file or pipe closed
-      }
-      perror("Error reading value from notification pipe");
-      break;
+    // Extract key and value from the buffer
+    strncpy(key, buffer, MAX_STRING_SIZE + 1);
+    key[MAX_STRING_SIZE] = '\0'; // Ensure null termination
+    strncpy(value, buffer + MAX_STRING_SIZE + 1, MAX_STRING_SIZE + 1);
+    value[MAX_STRING_SIZE] = '\0'; // Ensure null termination
+
+    // Calculate the actual length of key and value (excluding padding)
+    size_t key_len = strlen(key);
+    size_t value_len = strlen(value);
+
+    // Construct the message (key,value)\n
+    snprintf(message, sizeof(message), "(%.*s,%.*s)\n",
+             (int)key_len, key, (int)value_len, value);
+
+    if (pthread_mutex_lock(&stdout_mutex)) {
+      perror("Error locking stdout mutex");
     }
-    value[bytes_read2] = '\0';
-
-    snprintf(message, sizeof(message), "(%s,%s)\n", key, value);
 
     if (write_all(STDOUT_FILENO, message, strlen(message)) == -1) {
       perror("Error writing notifications to stdout");
     }
+
+    if (pthread_mutex_unlock(&stdout_mutex)) {
+      perror("Error unlocking stdout mutex");
+    }
+
   }
 
   close(client_notifications_fd); // Close the notification file descriptor when done
@@ -69,6 +82,11 @@ int main(int argc, char* argv[]) {
 
   pthread_t notif_thread;
 
+  if(pthread_mutex_init(&stdout_mutex, NULL)){
+    fprintf(stderr, "Failed to initialize the mutex\n");
+    return 1;
+  }
+
   char keys[MAX_NUMBER_SUB][MAX_STRING_SIZE] = {0};
   unsigned int delay_ms;
   size_t num;
@@ -80,7 +98,8 @@ int main(int argc, char* argv[]) {
 
   // TODO open pipes
 
-  if (kvs_connect(req_pipe_path, resp_pipe_path, server_pipe_path, notif_pipe_path, &client_notifications_fd) != 0) {
+  if (kvs_connect(req_pipe_path, resp_pipe_path, server_pipe_path, notif_pipe_path, &client_notifications_fd, &stdout_mutex) != 0) {
+    pthread_mutex_destroy(&stdout_mutex);
     return 1;
   }
 
@@ -88,19 +107,27 @@ int main(int argc, char* argv[]) {
     NULL) != 0){
 
     fprintf(stderr, "Error: Unable to create notifications thread \n");
+    pthread_mutex_destroy(&stdout_mutex);
+    return 1;
   }
 
   while (1) {
     switch (get_next(STDIN_FILENO)) {
       case CMD_DISCONNECT:
-        if (kvs_disconnect() != 0) {
+        if (kvs_disconnect(&stdout_mutex) != 0) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           return 1;
         }
         // TODO: end notifications thread
+
+        printf("Waiting for notifications thread to join\n");
+
         if (pthread_join(notif_thread, NULL) != 0) {
           fprintf(stderr, "Error: Unable to join notifications thread.\n");
         }
+
+        printf("Notifications thread joined\n");
+        pthread_mutex_destroy(&stdout_mutex);
         unlink(notif_pipe_path);
         printf("Disconnected from server\n");
         return 0;
@@ -112,7 +139,7 @@ int main(int argc, char* argv[]) {
           continue;
         }
 
-        if (kvs_subscribe(keys[0])) {
+        if (kvs_subscribe(keys[0], &stdout_mutex)) {
             fprintf(stderr, "Command subscribe failed\n");
         }
 
@@ -125,7 +152,7 @@ int main(int argc, char* argv[]) {
           continue;
         }
 
-        if (kvs_unsubscribe(keys[0])) {
+        if (kvs_unsubscribe(keys[0], &stdout_mutex)) {
             fprintf(stderr, "Command subscribe failed\n");
         }
 

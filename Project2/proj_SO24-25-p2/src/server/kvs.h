@@ -5,11 +5,17 @@
 
 #include <stddef.h>
 #include <pthread.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include <unistd.h>
 
+#include "operations.h"
 #include "constants.h"
+#include "../common/constants.h"
 #include "avl.h"
 #include "../common/safeFunctions.h"
-
 
 
 /// Node of the linked list.
@@ -35,50 +41,97 @@ typedef struct HashTable {
 } HashTable;
 
 
-/// Hash function to calculate the index of the key.
-/// @param key
-/// @return Index of the key.
+typedef struct AVLSessions {
+  struct AVL *avl_clients_node[MAX_SESSION_COUNT];
+  int num_subs[MAX_SESSION_COUNT];
+  // Mutexes are needed because of deletes, (only the dec_num_subs needs).
+  pthread_mutex_t session_mutex[MAX_SESSION_COUNT];
+}AVLSessions;
+
+
+/**
+ * Hash function to calculate the index of the key.
+ *
+ * @param key The key to hash.
+ * @return Index of the key.
+ */
 int hash(const char *key);
 
 
-/// Creates a new hash table.
-/// @return Newly created hash table, NULL on failure
+/**
+ * Creates a new hash table.
+ *
+ * @return Newly created hash table, NULL on failure.
+ */
 HashTable *create_hash_table();
 
 
-/// Appends a new key value pair to the hash table.
-/// @param ht Hash table to be modified.
-/// @param key Key of the pair to be written.
-/// @param value Value of the pair to be written.
-/// @param notif_message String to write to all fd stores inside the node.
-/// @return 0 if the node was appended successfully, -1.
-int write_pair(HashTable *ht, const char *key, const char *value, const char *notif_message);
+/**
+ * Appends a new key value pair to the hash table.
+ *
+ * @param ht Hash table to be modified.
+ * @param key Key of the pair to be written.
+ * @param value Value of the pair to be written.
+ * @param notif_message String to write to all fd stores inside the node.
+ * @return 0 if the node was appended successfully, -1 otherwise.
+ */
+int write_pair(HashTable *ht, const char *key, const char *value,\
+    const char *notif_message);
 
 
-/// Deletes the value of given key.
-/// @param ht Hash table to read from.
-/// @param key Key of the pair to read.
-/// @return 0 if the node was deleted successfully, -1 otherwise.
+/**
+ * Deletes the value of given key.
+ *
+ * @param ht Hash table to read from.
+ * @param key Key of the pair to read.
+ * @return 0 if the node was deleted successfully, -1 otherwise.
+ */
 char* read_pair(HashTable *ht, const char *key);
 
 
-/// Appends a new node to the list.
-/// @param ht Hash table to delete from.
-/// @param avl_sessions List of all AVL tree subscritions for all clients
-/// @param key Key of the pair to be deleted.
-/// @param notif_message String to write to all fd stores inside the node.
-/// @return 0 if the node was appended successfully, -1 otherwise.
-int delete_pair(HashTable *ht, AVL *avl_sessions[], const char *key,  const char *notif_message);
+/**
+ * Appends a new node to the list.
+ *
+ * @param ht Hash table to delete from.
+ * @param avl_sessions List of all AVL tree subscriptions for all clients.
+ * @param key Key of the pair to be deleted.
+ * @param notif_message String to write to all fd stores inside the node.
+ * @return 0 if the node was appended successfully, -1 otherwise.
+ */
+int delete_pair(HashTable *ht, AVLSessions *avl_sessions, const char *key,\
+    const char *notif_message);
 
 
-int subscribe_pair(HashTable *ht, char key[MAX_STRING_SIZE + 1], int client_id, int notif_fd);
+/**
+ * Subscribes a client to a key.
+ *
+ * @param ht Hash table to modify.
+ * @param key Key to subscribe to.
+ * @param session_id ID of the current session.
+ * @param notif_fd File descriptor for notifications.
+ * @return 0 on success, -1 otherwise.
+ */
+int subscribe_pair(HashTable *ht, char key[MAX_STRING_SIZE + 1],\
+    int session_id, int notif_fd);
 
 
-int unsubscribe_pair(HashTable *ht, char key[MAX_STRING_SIZE + 1], int client_id);
+/**
+ * Unsubscribes a client from a key.
+ *
+ * @param ht Hash table to modify.
+ * @param key Key to unsubscribe from.
+ * @param session_id ID of the current session.
+ * @return 0 on success, -1 otherwise.
+ */
+int unsubscribe_pair(HashTable *ht, char key[MAX_STRING_SIZE + 1],\
+    int session_id);
 
 
-/// Frees the hashtable.
-/// @param ht Hash table to be deleted.
+/**
+ * Frees the hashtable.
+ *
+ * @param ht Hash table to be deleted.
+ */
 void free_table(HashTable *ht);
 
 

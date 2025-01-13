@@ -1,19 +1,48 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <unistd.h>
-#include <strings.h>
+#include "operations.h"
 
-#include "kvs.h"
-#include "constants.h"
-#include "../common/safeFunctions.h"
-#include "../common/constants.h"
+
+AVLSessions *avl_sessions = NULL;
 
 /// Hash table to store the key value pairs.
 static struct HashTable *kvs_table = NULL;
 
-static struct AVL *avl_clients_node[MAX_SESSION_COUNT];
+
+AVL* get_avl_client(int session_id){
+  return avl_sessions->avl_clients_node[session_id];
+}
+
+
+void set_avl_client(int session_id, AVL *new_avl){
+  avl_sessions->avl_clients_node[session_id] = new_avl;
+}
+
+
+int get_avl_num_subs(int session_id){
+  return avl_sessions->num_subs[session_id];
+}
+
+
+void reset_num_subs(int session_id) {avl_sessions->num_subs[session_id] = 0;}
+
+
+void inc_num_subs(int session_id) {avl_sessions->num_subs[session_id]++;}
+
+
+void dec_num_subs(int session_id) {
+  // Delete is the only function outside client thread so a mutex is needed.
+  pthread_mutex_lock(&avl_sessions->session_mutex[session_id]);
+  avl_sessions->num_subs[session_id]--;
+  pthread_mutex_unlock(&avl_sessions->session_mutex[session_id]);
+}
+
+
+int initialize_session_avl(int session_id){
+  set_avl_client(session_id, create_avl());
+  reset_num_subs(session_id); // Puts counter of subscriptions to 0.
+
+  return get_avl_client(session_id) == NULL;
+}
+
 
 /// Calculates a timespec from a delay in milliseconds.
 /// @param delay_ms Delay in milliseconds.
@@ -22,6 +51,31 @@ static struct timespec delay_to_timespec(unsigned int delay_ms) {
   return (struct timespec){delay_ms / 1000, (delay_ms % 1000) * 1000000};
 }
 
+
+int clean_session_avl(int session_id){
+  if (clean_avl(get_avl_client(session_id)) != 0){
+    return -1;
+  }
+
+  reset_num_subs(session_id);
+
+  return 0;
+}
+
+
+int add_key_session_avl(int session_id, const char *key){
+  if (avl_add(get_avl_client(session_id), (void *) key, -1) != 0)
+    return -1;
+
+  return 0;
+}
+
+int remove_key_session_avl(int session_id, const char *key){
+  if (avl_remove(get_avl_client(session_id), (void *) key) != 0){
+    return -1;
+  }
+  return 0;
+}
 
 int kvs_init() {
   if (kvs_table != NULL) {
@@ -41,6 +95,30 @@ int kvs_terminate() {
     return -1;
   }
   free_table(kvs_table);
+  return 0;
+}
+
+
+int avl_sessions_init(){
+  if (avl_sessions != NULL) {
+    fprintf(stderr, "AVL sessions have already been initialized\n");
+    return -1;
+  }
+
+  avl_sessions = malloc(sizeof(AVLSessions));
+  return avl_sessions == NULL;
+}
+
+
+int avl_sessions_terminate() {
+  if (avl_sessions == NULL) {
+    fprintf(stderr, "AVL sessions state must be initialized\n");
+    return -1;
+  }
+  for (int session_id = 0; session_id < MAX_SESSION_COUNT; session_id++){
+    free_avl(get_avl_client(session_id));
+  }
+  free(avl_sessions);
   return 0;
 }
 
@@ -202,6 +280,8 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], \
     aux_message += MAX_STRING_SIZE + 1;
     strncpy(aux_message, values[indexNodes], MAX_STRING_SIZE + 1);
 
+    write_all(STDOUT_FILENO, notif_message, MAX_STRING_SIZE * 2 + 2);
+
     // Try to write the key value pair to the hash table
     if ((error = write_pair(kvs_table, keys[indexNodes], values[indexNodes], notif_message)) == -1) {
       fprintf(stderr, "Failed to write keypair (%s,%s)\n", keys[indexNodes],\
@@ -346,7 +426,7 @@ int kvs_delete(int fd, size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
     aux_message += MAX_STRING_SIZE + 1;
     strncpy(aux_message, "DELETED", MAX_STRING_SIZE + 1);
 
-    if (delete_pair(kvs_table, avl_clients_node, keys[indexNodes], notif_message) != 0) {
+    if (delete_pair(kvs_table, avl_sessions, keys[indexNodes], notif_message) != 0) {
       snprintf(buffer, MAX_WRITE_SIZE, "(%s,KVSMISSING)", keys[indexNodes]);
       if (!aux) {
         if (write_error_check(fd, "[") == -1){
@@ -473,6 +553,9 @@ int kvs_remove_subscription(int client_id, char *key) {
     if (strcmp(key_node->key, key) == 0) {
       avl_remove(key_node->avl_notif_fds, &client_id);
 
+      remove_key_session_avl(client_id, key);
+      dec_num_subs(client_id);
+
       hash_table_list_unlock(indexList);
       hash_table_unlock();
       return 0;
@@ -487,18 +570,12 @@ int kvs_remove_subscription(int client_id, char *key) {
 
 
 int kvs_disconnect(int client_id){
+  AVL *avl = get_avl_client(client_id);
 
-  AVL *avl = avl_clients_node[client_id];
-
-  if(apply_to_all_nodes(avl, kvs_remove_subscription, client_id) != 0){
-    printf("Failed applying to all nodes\n");
+  if(apply_to_all_nodes(avl, kvs_remove_subscription, client_id) != 0)
     return -1;
-  }
 
-  if(clean_avl(avl) != 0){
-    printf("Failed cleaning avl\n");
-    return -1;
-  }
+  if(clean_session_avl(client_id) != 0) return -1;
 
   return 0;
 }
@@ -519,6 +596,18 @@ int kvs_subscribe(int client_id, int notif_fd, char *key){
     return -1;
   }
 
+  if(get_avl_num_subs(client_id) == MAX_NUMBER_SUB){
+    hash_table_list_unlock(indexList);
+    hash_table_unlock();
+    return -1;
+  }
+
+  if(has_key(get_avl_client(client_id), key)){
+    hash_table_list_unlock(indexList);
+    hash_table_unlock();
+    return -1;
+  }
+
   if (subscribe_pair(kvs_table, key, client_id, notif_fd) != 0) {
     fprintf(stderr, "Failed to subscribe client %d to key %s.\n", client_id,\
     key);
@@ -526,7 +615,15 @@ int kvs_subscribe(int client_id, int notif_fd, char *key){
     hash_table_unlock();
     return -1;
   }
-  
+
+  if (add_key_session_avl(client_id, key) != 0) {
+    hash_table_list_unlock(indexList);
+    hash_table_unlock();
+    return -1;
+  }
+
+  inc_num_subs(client_id);
+
   hash_table_list_unlock(indexList);
   hash_table_unlock();
   return 0;
@@ -548,6 +645,12 @@ int kvs_unsubscribe(int client_id, char *key){
     return -1;
   }
 
+  if(!has_key(get_avl_client(client_id), key)){
+    hash_table_list_unlock(indexList);
+    hash_table_unlock();
+    return -1;
+  }
+
   if (unsubscribe_pair(kvs_table, key, client_id) != 0) {
     fprintf(stderr, "Failed to unsubscribe client %d to key %s.\n", client_id,\
     key);
@@ -555,6 +658,15 @@ int kvs_unsubscribe(int client_id, char *key){
     hash_table_unlock();
     return -1;
   }
+
+  if (remove_key_session_avl(client_id, key) != 0) {
+    hash_table_list_unlock(indexList);
+    hash_table_unlock();
+    return -1;
+  }
+
+  dec_num_subs(client_id);
+
   hash_table_list_unlock(indexList);
   hash_table_unlock();
   return 0;

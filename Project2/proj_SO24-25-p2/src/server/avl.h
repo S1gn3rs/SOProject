@@ -7,32 +7,141 @@
 #include "../common/io.h"
 #include "../common/safeFunctions.h"
 
+// Key type, can be a integer (session id) or a string (node's key).
 typedef enum KeyType {
     KEY_INT,
     KEY_STRING
 } KeyType;
 
 
+// AVL node structure.
 typedef struct AVLNode {
-    KeyType key_type;        // Indicates if the key is int or string
+    KeyType key_type;        // Indicates if the key is int or string.
     union {
         struct {
-            int int_key;     // Integer key
-            int fd;          // File descriptor (only for int_key)
+            int int_key;     // Integer key.
+            int fd;          // File descriptor (only for int_key).
         };
-        char *str_key;       // String key
+        char *str_key;       // String key.
     } key;
-    struct AVLNode *left;    // Pointer to the left node
-    struct AVLNode *right;   // Pointer to the right node
-    int height;              // Height of the node
+    struct AVLNode *left;    // Pointer to the left node.
+    struct AVLNode *right;   // Pointer to the right node.
+    int height;              // Height of the node.
 } AVLNode;
 
 
-// AVL tree structure
+// AVL tree structure.
 typedef struct AVL {
     AVLNode *root;
     pthread_rwlock_t rwl;
 } AVL;
+
+
+/**
+ * Retrieves the key from an AVL node.
+ *
+ * @param node The AVL node from which to retrieve the key.
+ * @return A pointer to the key (int or string), or NULL if the node is NULL.
+ */
+void* get_key(AVLNode *node);
+
+
+/**
+ * Retrieves the fd from an AVL node.
+ *
+ * @param node The AVL node from which to retrieve the fd.
+ * @return Value of fd from the integer key, or -1 otherwise.
+ */
+int get_fd(AVLNode *node);
+
+
+/**
+ * Retrieves the left node of an AVL node.
+ *
+ * @param node The AVL node from which to retrieve the left node.
+ * @return A pointer to the left node, or NULL if the node is NULL.
+ */
+AVLNode* get_left_node(AVLNode *node);
+
+
+/**
+ * Retrieves the right node of an AVL node.
+ *
+ * @param node The AVL node from which to retrieve the right.
+ * @return A pointer to the right node, or NULL if the node is NULL.
+ */
+AVLNode* get_right_node(AVLNode *node);
+
+
+/**
+ * Retrieves the root node of an AVL tree.
+ *
+ * @param avl The AVL tree from which to retrieve the root node.
+ * @return A pointer to the root node, or NULL if the AVL tree is NULL.
+ */
+AVLNode* get_root(AVL *avl);
+
+
+/**
+ * Locks the write lock of the AVL tree's read-write lock and checks for errors.
+ *
+ * @param avl The AVL tree whose read-write lock is to be locked.
+ * @return 0 on success, -1 on failure.
+ */
+int avl_wrlock_secure(AVL *avl);
+
+
+/**
+ * Locks the read lock of the AVL tree's read-write lock and checks for errors.
+ *
+ * @param avl The AVL tree whose read-write lock is to be locked.
+ * @return 0 on success, -1 on failure.
+ */
+int avl_rdlock_secure(AVL *avl);
+
+
+/**
+ * Unlocks the read-write lock of the AVL tree.
+ *
+ * @param avl The AVL tree whose read-write lock is to be unlocked.
+ */
+void avl_unlock_secure(AVL *avl);
+
+
+/**
+ * Checks if the key type of the AVL tree is a string.
+ *
+ * @param avl The AVL tree to check.
+ * @return 1 if the key type is a string, 0 otherwise.
+ */
+int is_AVL_key_string(AVL *avl);
+
+
+/**
+ * Checks if the key type of the AVL node is a string.
+ *
+ * @param node The AVL node to check.
+ * @return 1 if the key type is a string, 0 otherwise.
+ */
+int is_node_key_string(AVLNode *node);
+
+
+/**
+ * Checks if the key type of the AVL tree is an integer.
+ *
+ * @param avl The AVL tree to check.
+ * @return 1 if the key type is an integer, 0 otherwise.
+ */
+int is_AVL_key_int(AVL *avl);
+
+
+/**
+ * Checks if the key type of the AVL node is a integer.
+ *
+ * @param node The AVL node to check.
+ * @return 1 if the key type is a integer, 0 otherwise.
+ */
+int is_node_key_int(AVLNode *node);
 
 
 /**
@@ -67,15 +176,14 @@ int avl_remove(AVL *avl, void* key);
 
 
 /**
- * Checks if a key exists in the AVL tree and retrieves its associated fd.
+ * Checks if a key exists in the AVL tree.
  *
  * @param avl The AVL tree to search.
  * @param key The key to search for.
- * @param fd A pointer to store the associated fd if the key is found.
  *
- * @return 0 if the key was found, -1 otherwise.
+ * @return 1 if the key was found, 0 otherwise.
  */
-int has_fd(AVL *avl, void* key, int *fd);
+int has_key(AVL *avl, void* key);
 
 
 /**
@@ -108,18 +216,6 @@ int free_avl(AVL *avl);
  * @return 0 if the AVL tree was freed successfully, -1 otherwise.
  */
 int clean_avl(AVL *avl);
-
-
-/**
- * Removes subscriptions from avl_sessions based on the keys in avl_kvs_node.
- *
- * @param avl_kvs_node The AVL tree containing the keys to remove subscriptions for.
- * @param avl_sessions An array of AVL trees representing session subscriptions.
- * @param key String of kvs node's key to remove from sessions' avl.
- *
- * @return 0 on success, -1 if any error occurs.
- */
- int remove_node_subscriptions(AVL *avl_kvs_node, AVL *avl_sessions[], const char* key);
 
 
 /**

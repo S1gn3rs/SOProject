@@ -1,6 +1,100 @@
 #include "avl.h"
 
 
+void* get_key(AVLNode *node) {
+    if (node == NULL) return NULL;
+
+    if (node->key_type == KEY_INT) return &node->key.int_key;
+
+    else if (node->key_type == KEY_STRING) return node->key.str_key;
+
+    return NULL; // Should never reach here
+}
+
+int get_fd(AVLNode *node) {
+    if (node == NULL || node->key_type != KEY_INT) return -1;
+
+    return node->key.fd;
+}
+
+
+AVLNode* get_left_node(AVLNode *node) {
+    if (node == NULL) return NULL;
+
+    return node->left;
+}
+
+
+AVLNode* get_right_node(AVLNode *node) {
+    if (node == NULL) return NULL;
+
+    return node->right;
+}
+
+
+AVLNode* get_root(AVL *avl) {
+    if (avl == NULL) return NULL;
+
+    return avl->root;
+}
+
+
+int is_AVL_key_string(AVL *avl) {
+    if (avl == NULL || avl->root == NULL) return 0;
+
+    return avl->root->key_type == KEY_STRING;
+}
+
+int is_node_key_string(AVLNode *node) {
+        if (node == NULL) return 0;
+
+    return node->key_type == KEY_STRING;
+}
+
+
+int is_AVL_key_int(AVL *avl) {
+    if (avl == NULL || avl->root == NULL) return 0;
+
+    return avl->root->key_type == KEY_INT;
+}
+
+int is_node_key_int(AVLNode *node) {
+        if (node == NULL) return 0;
+
+    return node->key_type == KEY_INT;
+}
+
+
+int avl_wrlock_secure(AVL *avl) {
+    if (avl == NULL) return -1;
+
+    return pthread_rwlock_wrlock_error_check(&avl->rwl, NULL);
+}
+
+
+int avl_rdlock_secure(AVL *avl) {
+    if (avl == NULL) return -1;
+
+    return pthread_rwlock_rdlock_error_check(&avl->rwl, NULL);
+}
+
+
+void avl_unlock_secure(AVL *avl) {
+    pthread_rwlock_unlock(&avl->rwl);
+}
+
+
+/**
+ * Destroys the read-write lock of the AVL tree.
+ *
+ * @param avl The AVL tree whose read-write lock is to be destroyed.
+ * @return 0 on success, an error number on failure.
+ */
+int avl_destroy_secure(AVL *avl){
+    return pthread_rwlock_destroy(&avl->rwl);
+}
+
+
 /**
  * Creates a new AVL node.
  *
@@ -41,7 +135,6 @@ AVLNode *create_node(KeyType key_type, void* key, int fd) {
  * Returns the height of the node.
  *
  * @param node The node whose height is to be returned.
- *
  * @return The height of the node, or 0 if the node is NULL.
  */
 int height(AVLNode *node) {
@@ -54,7 +147,6 @@ int height(AVLNode *node) {
  *
  * @param a The first integer.
  * @param b The second integer.
- *
  * @return The maximum of the two integers.
  */
 int max(int a, int b) {
@@ -87,7 +179,6 @@ int compare_keys(KeyType key_type, void *key1, void *key2) {
  * Right rotates the subtree rooted with y.
  *
  * @param y The root of the subtree to be right rotated.
- *
  * @return The new root of the subtree after rotation.
  */
 AVLNode *right_rotate(AVLNode *y) {
@@ -110,7 +201,6 @@ AVLNode *right_rotate(AVLNode *y) {
  * Left rotates the subtree rooted with y.
  *
  * @param y The root of the subtree to be left rotated.
- *
  * @return The new root of the subtree after rotation.
  */
 AVLNode *left_rotate(AVLNode *y) {
@@ -133,7 +223,6 @@ AVLNode *left_rotate(AVLNode *y) {
  * Get the balance factor of the node.
  *
  * @param node The node whose balance factor is to be calculated.
- *
  * @return The balance factor of the node.
  */
 int get_balance(AVLNode *node) {
@@ -145,7 +234,6 @@ int get_balance(AVLNode *node) {
  * Balances the AVL tree node.
  *
  * @param node The node to be balanced.
- *
  * @return The new root of the subtree after balancing.
  */
 AVLNode *balance_node(AVLNode *node) {
@@ -182,7 +270,6 @@ AVLNode *balance_node(AVLNode *node) {
  * Finds the node with the minimum key value in the subtree.
  *
  * @param node The root of the subtree.
- *
  * @return The node with the minimum key value.
  */
 AVLNode *min_value_node(AVLNode *node) {
@@ -200,24 +287,18 @@ AVLNode *min_value_node(AVLNode *node) {
  * @param root The root of the subtree where the key-fd pair will be inserted.
  * @param key The key to be inserted.
  * @param fd The file descriptor (only for (int) key, use -1 if not applicable).
- *
  * @return The new root of the subtree after insertion.
  */
 AVLNode *insert_node(AVLNode *root, void* key, int fd) {
     int comparation = 0;
 
-    if (root == NULL) // No more operations are needed.
-        return create_node(root->key_type, key, fd);
-
-    if (root->key_type == KEY_INT)
-        comparation = compare_keys(root->key_type, key, &root->key.int_key);
-
-    else if (root->key_type == KEY_STRING)
-        comparation = compare_keys(root->key_type, key, root->key.str_key);
-
+    if (root == NULL){ // No more operations are needed.
+        if (fd == -1) return create_node(KEY_STRING, key, fd);
+        return create_node(KEY_INT, key, fd);
+    }
+    comparation = compare_keys(root->key_type, key, get_key(root));
     if (comparation < 0)
         root->left = insert_node(root->left, key, fd);
-
     else if (comparation > 0)
         root->right = insert_node(root->right, key, fd);
 
@@ -243,10 +324,7 @@ AVLNode *remove_node(AVLNode *root, void* key) {
 
     if (root == NULL) return root;
 
-    if (root->key_type == KEY_INT)
-        comparation = compare_keys(root->key_type, key, &root->key.int_key);
-    else if (root->key_type == KEY_STRING)
-        comparation = compare_keys(root->key_type, key, root->key.str_key);
+    comparation = compare_keys(root->key_type, key, get_key(root));
 
     if (comparation < 0)
         root->left = remove_node(root->left, key);
@@ -261,16 +339,17 @@ AVLNode *remove_node(AVLNode *root, void* key) {
                 root = NULL;
             }
             else{ // 1 (left or right) isn't null.
-                if (root->key_type == KEY_STRING && root->key.str_key)
-                        free(root->key.str_key);
+                if (is_node_key_string(root) && get_key(root))
+                        free(get_key(root));
 
                 *root = *temp; // New root is the left/right node.
-                if (root->key_type == KEY_STRING && temp->key.str_key)
-                    root->key.str_key = strdup_error_check(temp->key.str_key);
+
+                if (is_node_key_string(root) && get_key(temp))
+                    root->key.str_key = strdup_error_check(get_key(temp));
             }
 
-            if (temp->key_type == KEY_STRING && temp->key.str_key) {
-                free(temp->key.str_key); // Free the string key in the temp node
+            if (is_node_key_string(temp) && get_key(temp)) {
+                free(get_key(temp)); // Free the string key in the temp node
             }
             free(temp);
         }
@@ -279,24 +358,21 @@ AVLNode *remove_node(AVLNode *root, void* key) {
 
 
             // Free the current node's string key, if applicable
-            if (root->key_type == KEY_STRING && root->key.str_key) {
-                free(root->key.str_key);
+            if (is_node_key_string(root) && get_key(root)) {
+                free(get_key(root));
             }
 
             // Copy the key and fd from the temp node to the current node
-            if (temp->key_type == KEY_STRING && temp->key.str_key) {
-                root->key.str_key = strdup_error_check(temp->key.str_key);
+            if (is_node_key_string(temp) && get_key(temp)) {
+                root->key.str_key = strdup_error_check(get_key(temp));
             }
             else {
-                root->key.int_key = temp->key.int_key; // Copy integer key
-                root->key.fd = temp->key.fd;           // Copy file descriptor
+                root->key.int_key = *(int*) get_key(temp); // Copy integer key
+                root->key.fd =  get_fd(temp);           // Copy file descriptor
             }
 
             // Remove the minimum node from the right subtree
-            if (temp->key_type == KEY_STRING)
-                root->right = remove_node(root->right, temp->key.str_key);
-            else if (temp->key_type == KEY_INT)
-                root->right = remove_node(root->right, &temp->key.int_key);
+            root->right = remove_node(root->right, get_key(temp));
         }
     }
 
@@ -319,62 +395,56 @@ AVL *create_avl() {
         return NULL;
     }
 
-    printf("AVL created\n");
     return avl;
 }
 
 
 int avl_add(AVL *avl, void* key, int fd) {
-    if (!avl || pthread_rwlock_wrlock_error_check(&avl->rwl, NULL) < 0)
-        return -1;
+    if (avl_wrlock_secure(avl)) return -1;
 
     avl->root = insert_node(avl->root, key, fd);
 
-    pthread_rwlock_unlock(&avl->rwl);
+    avl_unlock_secure(avl);
     return 0;
 }
 
 
 int avl_remove(AVL *avl, void* key) {
-    if (!avl || pthread_rwlock_wrlock_error_check(&avl->rwl, NULL) < 0)
-        return -1;
+    if (avl_wrlock_secure(avl)) return -1;
 
     avl->root = remove_node(avl->root, key);
 
-    pthread_rwlock_unlock(&avl->rwl);
+    avl_unlock_secure(avl);
     return 0;
 }
 
 
-int has_fd(AVL *avl, void* key, int *fd) {
+int has_key(AVL *avl, void *key) {
     AVLNode *current;
     int comparation;
 
-    if(pthread_rwlock_rdlock_error_check(&avl->rwl, NULL) < 0) return -1;
-    current = avl->root;
-
-    if (avl->root->key_type != KEY_INT){
-        pthread_rwlock_unlock(&avl->rwl);
-        return -1;
+    if (avl_rdlock_secure(avl)){
+        printf("rdlock failed\n");
+        return 0;
     }
 
+    current = avl->root;
+
     while (current) {
-        comparation = compare_keys(KEY_INT, key, &current->key.int_key);
+
+        comparation = compare_keys(current->key_type, key, get_key(current));
         if (comparation < 0) {
-            current = current->left;
-
+            current = get_left_node(current);
         } else if (comparation > 0) {
-            current = current->right;
-
+            current = get_right_node(current);
         } else {
-            *fd = current->key.fd;
-            pthread_rwlock_unlock(&avl->rwl);
-            return 0; // found
+            avl_unlock_secure(avl);
+            return 1; // Key found
         }
     }
 
-    pthread_rwlock_unlock(&avl->rwl);
-    return -1; // not found
+    avl_unlock_secure(avl);
+    return 0; // Key not found
 }
 
 
@@ -392,11 +462,13 @@ int send_to_all_fds_recursive(AVLNode *node, const char *message, size_t size) {
 
     if (node) {
         // send to left sub-tree
-        gotError += send_to_all_fds_recursive(node->left, message, size);
+        gotError += send_to_all_fds_recursive(get_left_node(node), message,\
+            size);
         // send to current fd, write returns 1 on success, so we subtract
-        gotError += 1 - write_all(node->key.fd, message, size);
+        gotError += 1 - write_all(get_fd(node), message, size);
         // send to right sub-tree
-        gotError += send_to_all_fds_recursive(node->right, message, size);
+        gotError += send_to_all_fds_recursive(get_right_node(node), message,\
+            size);
 
         return gotError;
     }
@@ -406,20 +478,20 @@ int send_to_all_fds_recursive(AVLNode *node, const char *message, size_t size) {
 
 int send_to_all_fds(AVL *avl, const char *message, size_t size) {
     int gotError = 0; // Incremented when a message couldn't be sent to a fd.
-    if(pthread_rwlock_rdlock_error_check(&avl->rwl, NULL) < 0) return -1;
-    if (avl->root == NULL){
-        pthread_rwlock_unlock(&avl->rwl);
+    if(avl_rdlock_secure(avl)) return -1;
+    if (get_root(avl) == NULL){
+        avl_unlock_secure(avl);
         return 0;
     }
 
-    if (avl->root->key_type != KEY_INT){
-        pthread_rwlock_unlock(&avl->rwl);
+    if (!is_AVL_key_int(avl)){
+        avl_unlock_secure(avl);
         return -1;
     }
 
-    gotError = send_to_all_fds_recursive(avl->root, message, size);
+    gotError = send_to_all_fds_recursive(get_root(avl), message, size);
 
-    pthread_rwlock_unlock(&avl->rwl);
+    avl_unlock_secure(avl);
 
     return (gotError) ? -1 : 0;
 }
@@ -432,10 +504,10 @@ int send_to_all_fds(AVL *avl, const char *message, size_t size) {
  */
 void free_avl_node(AVLNode *node) {
     if (node) {
-        free_avl_node(node->left);
-        free_avl_node(node->right);
+        free_avl_node(get_left_node(node));
+        free_avl_node(get_right_node(node));
 
-        if (node->key_type == KEY_STRING)
+        if (is_node_key_string(node))
             free(node->key.str_key);
 
         free(node);
@@ -446,86 +518,26 @@ void free_avl_node(AVLNode *node) {
 int free_avl(AVL *avl) {
     int destroy_result;
 
-    if (pthread_rwlock_wrlock_error_check(&avl->rwl, NULL) < 0) return -1;
+    if (avl_wrlock_secure(avl)) return -1;
 
-    free_avl_node(avl->root);
-    pthread_rwlock_unlock(&avl->rwl);
+    free_avl_node(get_root(avl));
+    avl_unlock_secure(avl);
 
-    destroy_result = pthread_rwlock_destroy(&avl->rwl);
+    destroy_result = avl_destroy_secure(avl);
     free(avl);
     return destroy_result;
 }
 
-int clean_avl(AVL *avl){
-    if (pthread_rwlock_wrlock_error_check(&avl->rwl, NULL) < 0) return -1;
 
-    free_avl_node(avl->root);
-    pthread_rwlock_unlock(&avl->rwl);
+int clean_avl(AVL *avl){
+    if (avl_wrlock_secure(avl)) return -1;
+
+    free_avl_node(get_root(avl));
+    avl->root = NULL;
+
+    avl_unlock_secure(avl);
 
     return 0;
-}
-
-
-/**
- * Recursively removes subscriptions from avl_sessions based on the keys in
- * avl_kvs_node.
- *
- * @param node The current node in the avl_kvs_node tree.
- * @param avl_sessions An array of AVL trees representing session subscriptions.
- * @param key String of kvs node's key to remove from sessions' avl.
- *
- * @return 0 on success, -1 if any error occurs.
- */
-int remove_node_subscriptions_recursive(AVLNode *root, AVL *avl_sessions[],\
-    const char* key){
-
-    int result = 0;
-    int session_id;
-
-
-    if (!root) return 0;
-
-    // Remove subscriptions from the left subtree
-    result += remove_node_subscriptions_recursive(root->left,avl_sessions,key);
-
-    session_id = root->key.int_key;
-
-    // Remove subscriptions from current subtree
-    if (avl_remove(avl_sessions[session_id], (void *) key) < 0) result = -1;
-
-    // Remove subscriptions from the right subtree
-    result += remove_node_subscriptions_recursive(root->right,avl_sessions,key);
-
-    return result ? -1 : 0;
-
-}
-
-
-int remove_node_subscriptions(AVL *avl_kvs_node, AVL *avl_sessions[],\
-    const char* key){
-
-    AVLNode *node;
-    int result;
-
-    if (pthread_rwlock_wrlock_error_check(&avl_kvs_node->rwl, NULL) < 0)
-        return -1;
-
-    if (avl_kvs_node->root == NULL){
-        pthread_rwlock_unlock(&avl_kvs_node->rwl);
-        return 0;
-    }
-
-    node = avl_kvs_node->root;
-
-    if (node->key_type != KEY_INT){
-        pthread_rwlock_unlock(&avl_kvs_node->rwl);
-        return -1;
-    }
-
-    result = remove_node_subscriptions_recursive(node, avl_sessions, key);
-
-    pthread_rwlock_unlock(&avl_kvs_node->rwl);
-    return result ? -1 : 0;
 }
 
 
@@ -543,11 +555,11 @@ int apply_to_all_nodes_recursive(AVLNode *node, int (*func)(int, char *),\
 
     if (node) {
         // Apply function to left sub-tree
-        apply_to_all_nodes_recursive(node->left, func, int_value);
+        apply_to_all_nodes_recursive(get_left_node(node), func, int_value);
         // Apply function to current node
-        error += func(int_value, node->key.str_key);
+        error += func(int_value, get_key(node));
         // Apply function to right sub-tree
-        apply_to_all_nodes_recursive(node->right, func, int_value);
+        apply_to_all_nodes_recursive(get_right_node(node), func, int_value);
     }
     return error;
 }
@@ -557,25 +569,21 @@ int apply_to_all_nodes(AVL *avl, int (*func)(int, char *), int int_value) {
     int error = 0;
 
     if (!avl){
-        printf("AVL is NULL\n");
+        return -1;
+    }
+    if (!get_root(avl)) return 0;
+
+    if (avl_rdlock_secure(avl)){
         return -1;
     }
 
-    if (pthread_rwlock_rdlock_error_check(&avl->rwl, NULL) < 0){
-        printf("Error locking AVL\n");
+    if (!is_AVL_key_string(avl)){
+        avl_unlock_secure(avl);
         return -1;
     }
 
-    if (avl->root->key_type != KEY_STRING) {
-        pthread_rwlock_unlock(&avl->rwl);
-        printf("AVL key type is not string\n");
-        return -1;
-    }
+    error = apply_to_all_nodes_recursive(get_root(avl), func, int_value);
 
-    error = apply_to_all_nodes_recursive(avl->root, func, int_value);
-
-    printf("Error: %d\n", error);
-
-    pthread_rwlock_unlock(&avl->rwl);
+    avl_unlock_secure(avl);
     return error ? -1 : 0;
 }
