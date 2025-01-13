@@ -400,11 +400,16 @@ AVL *create_avl() {
 
 
 int avl_add(AVL *avl, void* key, int fd) {
+    printf("secure\n");
     if (avl_wrlock_secure(avl)) return -1;
 
+    printf("secure\n");
     avl->root = insert_node(avl->root, key, fd);
 
+    printf("unlock\n");
     avl_unlock_secure(avl);
+
+    printf("unlocked\n");
     return 0;
 }
 
@@ -424,7 +429,6 @@ int has_key(AVL *avl, void *key) {
     int comparation;
 
     if (avl_rdlock_secure(avl)){
-        printf("rdlock failed\n");
         return 0;
     }
 

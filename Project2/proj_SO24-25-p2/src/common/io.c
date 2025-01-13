@@ -7,8 +7,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "src/common/constants.h"
- 
- 
+
 int read_all(int fd, void *buffer, size_t size, int *intr) {
   if (intr != NULL && *intr) {
     return -1;
@@ -35,7 +34,7 @@ int read_all(int fd, void *buffer, size_t size, int *intr) {
   }
   return 1;
 }
- 
+
 int read_string(int fd, char *str) {
   ssize_t bytes_read = 0;
   char ch;
@@ -51,7 +50,7 @@ int read_string(int fd, char *str) {
   str[bytes_read] = '\0';
   return (int)bytes_read;
 }
- 
+
 int write_all(int fd, const void *buffer, size_t size) {
   size_t bytes_written = 0;
   while (bytes_written < size) {
@@ -77,5 +76,3 @@ void delay(unsigned int time_ms) {
     struct timespec delay = delay_to_timespec(time_ms);
     nanosleep(&delay, NULL);
 }
-
-

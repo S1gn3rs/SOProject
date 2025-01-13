@@ -15,6 +15,8 @@
 #include "constants.h"
 #include "../common/safeFunctions.h"
 
+// Forward declaration of ClientData
+typedef struct ClientData ClientData;
 
 /// Initializes the KVS state.
 /// @return 0 if the KVS state was initialized successfully, -1 otherwise.
@@ -24,6 +26,7 @@ int kvs_init();
 /// Destroys the KVS state.
 /// @return 0 if the KVS state was terminated successfully, -1 otherwise.
 int kvs_terminate();
+
 
 /// Initializes the AVL sessions state.
 /// @return 0 if the AVL sessions state was initialized successfully,
@@ -35,6 +38,11 @@ int avl_sessions_init();
 /// @return 0 if the AVL sessions state was terminated successfully,
 /// -1 otherwise.
 int avl_sessions_terminate();
+
+
+/// Clean the AVL sessions state.
+/// @return 0 if the AVL sessions state was cleaned successfully, -1 otherwise.
+int avl_clean_sessions();
 
 
 /// Writes a key value pair to the KVS. If key already exists it is updated.
@@ -74,20 +82,40 @@ int kvs_show(int fd);
 /// @return 0 if the backup was successful, -1 otherwise.
 int kvs_backup(int fd);
 
-/// Gets the AVL tree of a session.
+
+/// Gets the AVL tree subscritions of a session.
 /// @param session_id Session ID.
-/// @return AVL tree of the session.
+/// @return AVL tree subscritions of the session.
 AVL* get_avl_client(int session_id);
 
-/// Sets the AVL tree of a session.
+
+/// Sets the AVL tree subscritions of a session.
 /// @param session_id Session ID.
-/// @param new_avl AVL tree to set.
+/// @param new_avl AVL tree subscritions to set.
 void set_avl_client(int session_id, AVL *new_avl);
+
+
+/// Sets the AVL client data of a session.
+/// @param session_id Session ID.
+/// @param new_avl AVL client data to set.
+void set_client_info(int session_id, ClientData *new_client_data);
+
+
+/// Gets the AVL client data of a session.
+/// @param session_id Session ID.
+/// @return AVL client data of the session.
+ClientData* get_client_info(int session_id);
 
 /// Gets the number of subscriptions of a session.
 /// @param session_id Session ID.
 /// @return Number of subscriptions of the session.
 int get_avl_num_subs(int session_id);
+
+/// Gets the mutex of a session.
+/// @param session_id Session ID.
+/// @return pointer to mutex of the session.
+pthread_mutex_t* get_mutex(int sessions_id);
+
 
 /// Resets the number of subscriptions of a session.
 /// @param session_id Session ID.
@@ -126,8 +154,7 @@ int initialize_session_avl(int session_id);
 
 /// Cleans a session AVL tree.
 /// @param session_id Session ID.
-/// @return 0 if the session AVL tree was cleaned successfully, -1 otherwise.
-int clean_session_avl(int session_id);
+void clean_session_avl(int session_id);
 
 /// Adds a key to the session AVL tree.
 /// @param session_id Session ID.

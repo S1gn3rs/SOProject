@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
+#include <stdatomic.h>
+#include <stdbool.h>
 
 #include "parser.h"
 #include "src/client/api.h"
@@ -15,6 +18,8 @@ int client_notifications_fd;
 
 pthread_mutex_t stdout_mutex;
 
+atomic_bool terminate = false;
+
 void* notif_function(void *args){
   (void)args;  // Ignore the unused parameter
 
@@ -25,14 +30,18 @@ void* notif_function(void *args){
   char message[MAX_STRING_SIZE * 2 + 5];
   int interrupted_read = 0;
 
-  while (1) {
+  while (!atomic_load(&terminate)) {
+    errno = 0; // Reset errno before the system call
+    bytes_read = read_all(client_notifications_fd, buffer,\
+      (MAX_STRING_SIZE + 1) * 2, &interrupted_read);
 
-    bytes_read = read_all(client_notifications_fd, buffer, (MAX_STRING_SIZE + 1) * 2, &interrupted_read);
-    if (bytes_read <= 0) {
-      if (bytes_read == 0) {
-        break; // End of file or pipe closed
-      }
+    if (bytes_read <= 0 || errno == EPIPE) {
+      // if (bytes_read == 0) {
+      //   printf("Notification pipe closed\n");
+      //   break; // End of file or pipe closed
+      // }
       perror("Error reading key from notification pipe");
+      atomic_store(&terminate, true);
       break;
     }
 
@@ -64,7 +73,7 @@ void* notif_function(void *args){
 
   }
 
-  close(client_notifications_fd); // Close the notification file descriptor when done
+  //close(client_notifications_fd); // Close the notification file descriptor when done
   return NULL;
 }
 
@@ -98,7 +107,7 @@ int main(int argc, char* argv[]) {
 
   // TODO open pipes
 
-  if (kvs_connect(req_pipe_path, resp_pipe_path, server_pipe_path, notif_pipe_path, &client_notifications_fd, &stdout_mutex) != 0) {
+  if (kvs_connect(req_pipe_path, resp_pipe_path, server_pipe_path, notif_pipe_path, &client_notifications_fd, &stdout_mutex, &terminate) != 0) {
     pthread_mutex_destroy(&stdout_mutex);
     return 1;
   }
@@ -112,9 +121,30 @@ int main(int argc, char* argv[]) {
   }
 
   while (1) {
+
+    if (atomic_load(&terminate)) {
+        printf("Termination signal received. Cleaning up...\n");
+
+        if (pthread_join(notif_thread, NULL) != 0) {
+            fprintf(stderr, "Error: Unable to join notifications thread.\n");
+        }
+
+        pthread_mutex_destroy(&stdout_mutex);
+        // close(api_req_pipe_fd);
+        // close(api_resp_pipe_fd);
+        close(client_notifications_fd);
+        unlink(req_pipe_path);
+        unlink(resp_pipe_path);
+        unlink(notif_pipe_path);
+
+        return 0;
+    }
+
+    printf("Enter command: \n");
+
     switch (get_next(STDIN_FILENO)) {
       case CMD_DISCONNECT:
-        if (kvs_disconnect(&stdout_mutex) != 0) {
+        if (kvs_disconnect(&stdout_mutex, &terminate) != 0) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           return 1;
         }
@@ -139,7 +169,7 @@ int main(int argc, char* argv[]) {
           continue;
         }
 
-        if (kvs_subscribe(keys[0], &stdout_mutex)) {
+        if (kvs_subscribe(keys[0], &stdout_mutex, &terminate)) {
             fprintf(stderr, "Command subscribe failed\n");
         }
 
@@ -152,7 +182,7 @@ int main(int argc, char* argv[]) {
           continue;
         }
 
-        if (kvs_unsubscribe(keys[0], &stdout_mutex)) {
+        if (kvs_unsubscribe(keys[0], &stdout_mutex, &terminate)) {
             fprintf(stderr, "Command subscribe failed\n");
         }
 

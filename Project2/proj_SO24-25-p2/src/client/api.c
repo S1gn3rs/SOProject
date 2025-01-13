@@ -1,5 +1,5 @@
 #include "api.h"
-#include "pthread.h"
+
 
 char api_req_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
 char api_resp_pipe_path[MAX_PIPE_PATH_LENGTH + 1];
@@ -10,7 +10,8 @@ int api_resp_pipe_fd;
 
 // create pipes and connect
 int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path,
-                char const* notif_pipe_path, int* client_notif_pipe_fd, pthread_mutex_t* stdout_mutex) {
+                char const* notif_pipe_path, int* client_notif_pipe_fd, pthread_mutex_t* stdout_mutex, atomic_bool* epipe_flag) {
+
   size_t length_con_buffer = 1 + (MAX_PIPE_PATH_LENGTH + 1) * 3;
   char connection_buffer[length_con_buffer];
   char *cur_buffer_pos;
@@ -93,11 +94,15 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
 
   printf("Waiting for server response...\n");
 
+  errno = 0;
+
   if (read_all(api_resp_pipe_fd, response_buffer, 2, &interrupted_read) < 0){
-    perror("Couldn't read message from server.");
-    close(api_req_pipe_fd);
-    close(api_resp_pipe_fd);
-    close(*client_notif_pipe_fd);
+    if (errno == EPIPE) {
+        atomic_store(epipe_flag, true);  // Set the atomic flag
+        perror("EPIPE error occurred while read from response pipe.");
+        close(api_req_pipe_fd);
+        close(api_resp_pipe_fd);
+    }
     return 1;
   }
 
@@ -120,17 +125,33 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
 }
 
 // close pipes and unlink pipe files
-int kvs_disconnect(pthread_mutex_t* stdout_mutex) {
+int kvs_disconnect(pthread_mutex_t* stdout_mutex, atomic_bool* epipe_flag) {
   char response_buffer[2];
   int interrupted_read = 0;
   char opcode = OP_CODE_DISCONNECT;
 
-  if (write_all(api_req_pipe_fd, &opcode, 1) < 0)
+  errno = 0;
+
+  if (write_all(api_req_pipe_fd, &opcode, 1) < 0){
+    if (errno == EPIPE) {
+        atomic_store(epipe_flag, true);  // Set the atomic flag
+        perror("EPIPE error occurred while read from response pipe.");
+        close(api_req_pipe_fd);
+        close(api_resp_pipe_fd);
+    }
     return 1;
+  }
   /////////////////////////////////////////////// FALTA READ ??????????????????????????????????????????????????????????????????????????????????????
 
+  errno = 0;
+
   if (read_all(api_resp_pipe_fd, response_buffer, 2, &interrupted_read) < 0){
-    perror("Couldn't read message from server.");
+    if (errno == EPIPE) {
+        atomic_store(epipe_flag, true);  // Set the atomic flag
+        perror("EPIPE error occurred while read from response pipe.");
+        close(api_req_pipe_fd);
+        close(api_resp_pipe_fd);
+    }
     return 1;
   }
 
@@ -153,7 +174,7 @@ int kvs_disconnect(pthread_mutex_t* stdout_mutex) {
 
 
 // send subscribe message to request pipe and wait for response in response pipe
-int kvs_subscribe(const char* key, pthread_mutex_t* stdout_mutex) {
+int kvs_subscribe(const char* key, pthread_mutex_t* stdout_mutex, atomic_bool* epipe_flag) {
   char subscribe_buffer[MAX_STRING_SIZE + 2];
   char response_buffer[2];
   int interrupted_read = 0;
@@ -161,11 +182,27 @@ int kvs_subscribe(const char* key, pthread_mutex_t* stdout_mutex) {
   *subscribe_buffer = OP_CODE_SUBSCRIBE;
   strncpy(subscribe_buffer + 1, key, MAX_STRING_SIZE + 1);
 
-  if (write_all(api_req_pipe_fd, subscribe_buffer, MAX_STRING_SIZE + 2) < 0)
+  errno = 0;
+
+  if (write_all(api_req_pipe_fd, subscribe_buffer, MAX_STRING_SIZE + 2) < 0){
+    if (errno == EPIPE) {
+        atomic_store(epipe_flag, true);  // Set the atomic flag
+        perror("EPIPE error occurred while trying to write to request pipe.");
+        close(api_req_pipe_fd);
+        close(api_resp_pipe_fd);
+    }
     return 1;
+  }
+
+  errno = 0;
 
   if (read_all(api_resp_pipe_fd, response_buffer, 2, &interrupted_read) < 0){
-    perror("Couldn't read message from server.");
+    if (errno == EPIPE) {
+        atomic_store(epipe_flag, true);  // Set the atomic flag
+        perror("EPIPE error occurred while read from response pipe.");
+        close(api_req_pipe_fd);
+        close(api_resp_pipe_fd);
+    }
     return 1;
   }
 
@@ -179,7 +216,7 @@ int kvs_subscribe(const char* key, pthread_mutex_t* stdout_mutex) {
 }
 
 // send unsubscribe message to request pipe and wait for response in response pipe
-int kvs_unsubscribe(const char* key, pthread_mutex_t* stdout_mutex) {
+int kvs_unsubscribe(const char* key, pthread_mutex_t* stdout_mutex, atomic_bool* epipe_flag) {
   char unsubscribe_buffer[MAX_STRING_SIZE + 2];
   char response_buffer[2];
   int interrupted_read = 0;
@@ -187,11 +224,27 @@ int kvs_unsubscribe(const char* key, pthread_mutex_t* stdout_mutex) {
   *unsubscribe_buffer = OP_CODE_UNSUBSCRIBE;
   strncpy(unsubscribe_buffer + 1, key, MAX_STRING_SIZE + 1);
 
-  if (write_all(api_req_pipe_fd, unsubscribe_buffer, MAX_STRING_SIZE + 2) < 0)
+  errno = 0;
+
+  if (write_all(api_req_pipe_fd, unsubscribe_buffer, MAX_STRING_SIZE + 2) < 0){
+    if (errno == EPIPE) {
+        atomic_store(epipe_flag, true);  // Set the atomic flag
+        perror("EPIPE error occurred while read from response pipe.");
+        close(api_req_pipe_fd);
+        close(api_resp_pipe_fd);
+    }
     return 1;
+  }
+
+  errno = 0;
 
   if (read_all(api_resp_pipe_fd, response_buffer, 2, &interrupted_read) < 0){
-    perror("Couldn't read message from server.");
+    if (errno == EPIPE) {
+        atomic_store(epipe_flag, true);  // Set the atomic flag
+        perror("EPIPE error occurred while read from response pipe.");
+        close(api_req_pipe_fd);
+        close(api_resp_pipe_fd);
+    }
     return 1;
   }
 

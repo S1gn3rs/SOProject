@@ -17,6 +17,19 @@
 #include "avl.h"
 #include "../common/safeFunctions.h"
 
+// Forward declaration of ClientData
+typedef struct ClientData ClientData;
+
+//Clients struct
+typedef struct ClientData {
+  char req_pipe_path[MAX_PIPE_PATH_LENGTH];   // Request pipe path.
+  char resp_pipe_path[MAX_PIPE_PATH_LENGTH];  // Response pipe path.
+  char notif_pipe_path[MAX_PIPE_PATH_LENGTH]; // Notification pipe path.
+  int req_pipe_fd;                          // Request pipe fd.
+  int resp_pipe_fd;                         // Response pipe fd.
+  int notif_pipe_fd;                        // Notification pipe fd.
+}ClientData;
+
 
 /// Node of the linked list.
 typedef struct KeyNode {
@@ -42,6 +55,7 @@ typedef struct HashTable {
 
 
 typedef struct AVLSessions {
+  struct ClientData *clients_data[MAX_SESSION_COUNT];
   struct AVL *avl_clients_node[MAX_SESSION_COUNT];
   int num_subs[MAX_SESSION_COUNT];
   // Mutexes are needed because of deletes, (only the dec_num_subs needs).

@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <signal.h>
 
 #include "constants.h"
 #include "parser.h"
@@ -28,18 +29,11 @@ typedef struct JobThreadArgs {
 }JobThreadArgs;
 
 
-//Clients struct
-typedef struct ClientData {
-  char req_pipe_path[MAX_PIPE_PATH_LENGTH];   // Request pipe path.
-  char resp_pipe_path[MAX_PIPE_PATH_LENGTH];  // Response pipe path.
-  char notif_pipe_path[MAX_PIPE_PATH_LENGTH]; // Notification pipe path.
-}ClientData;
-
 
 //Client Node
 typedef struct ClientNode{
-  struct ClientData data;
-  struct ClientNode* next;
+  struct ClientData *data;
+  struct ClientNode *next;
 }ClientNode;
 
 
@@ -61,6 +55,7 @@ pthread_mutex_t queue_mutex; // Global mutex to protect the changes on the queue
 sem_t sem_remove_from_queue;
 sem_t sem_add_to_queue;
 
+volatile sig_atomic_t sig_flag;
 
 /**
  * Thread function to process the .job files.
@@ -68,6 +63,19 @@ sem_t sem_add_to_queue;
  * @param args Arguments (struct) passed to the thread function.
  * @return NULL on completion.
  */void *do_commands(void *args) {
+
+  sigset_t sigset;
+
+  if(sigemptyset(&sigset) != 0 || sigaddset(&sigset, SIGUSR1) != 0){
+    perror("Failed to initialize signal set");
+    return NULL;
+  }
+
+  if(pthread_sigmask(SIG_BLOCK, &sigset, NULL) != 0){
+    perror("Failed to block SIGUSR1");
+    return NULL;
+  }
+
   struct dirent *entry;       // Directory entry.
   size_t length_entry_name;   // Get the file name len.
 
@@ -284,6 +292,15 @@ sem_t sem_add_to_queue;
   return NULL;
 }
 
+void sig_handler(int sign){
+  (void)sign; // Mark the parameter as unused
+
+  // if (signal(SIGUSR1, sig_handler) == SIG_ERR) {
+  //   exit(EXIT_FAILURE);
+  // }
+  sig_flag = 1;
+}
+
 
 /**
  * Thread function to handle client connections.
@@ -294,6 +311,18 @@ sem_t sem_add_to_queue;
 void* client_thread(void *args) {
   int session_id =  *(int*) args;
 
+  sigset_t sigset;
+
+  if(sigemptyset(&sigset) != 0 || sigaddset(&sigset, SIGUSR1) != 0){
+    perror("Failed to initialize signal set");
+    return NULL;
+  }
+
+  if(pthread_sigmask(SIG_BLOCK, &sigset, NULL) != 0){
+    perror("Failed to block SIGUSR1");
+    return NULL;
+  }
+
   // Initialize the AVL tree for the session.
   if (initialize_session_avl(session_id)){
     perror("Couldn't create session avl.");
@@ -302,11 +331,11 @@ void* client_thread(void *args) {
 
   while(1){
     ClientNode *client;
+    ClientData *data;
     char response_connection[2]; // OP_CODE | result
-
+    int client_connected = 1; // Client session state
 
     clean_session_avl(session_id); // Clean old subsc. nodes by other clients.
-
     // Wait for a client to be added to the queue.
     sem_wait(&sem_remove_from_queue);
     pthread_mutex_lock(&queue_mutex);
@@ -320,37 +349,54 @@ void* client_thread(void *args) {
     pthread_mutex_unlock(&queue_mutex);
     sem_post(&sem_add_to_queue);
 
+    data = client->data;
+    free(client); // From here we only need ClientData and not the clientNode.
+
     response_connection[0] = OP_CODE_CONNECT;
     response_connection[1] = '1'; // Result is 1 and changes to 0 on success.
 
-    int resp_pipe_fd = open(client->data.resp_pipe_path, O_WRONLY);
-    if (resp_pipe_fd == -1){
+    data->resp_pipe_fd = open(data->resp_pipe_path, O_WRONLY);
+    if (data->resp_pipe_fd == -1){
+      free(data);
       perror("Error opening client response pipe");
-      return NULL;
+      continue;;
     }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    int req_pipe_fd = open(client->data.req_pipe_path, O_RDONLY);
-    if (req_pipe_fd == -1){
-      if (write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1) { ////////////////////////////// verificar
+
+    data->req_pipe_fd = open(data->req_pipe_path, O_RDONLY);
+    if (data->req_pipe_fd == -1){ // Failed in connection (open request pipe failed)
+      if (write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
         perror("Error writing OP_CODE and result to response pipe");
       }
       perror("Error opening client request pipe");
-      return NULL;
+      close(data->resp_pipe_fd);
+      free(data);
+      continue;
     }
 
-    int notif_pipe_fd = open(client->data.notif_pipe_path, O_WRONLY);
-    if (notif_pipe_fd == -1){
+    data->notif_pipe_fd = open(data->notif_pipe_path, O_WRONLY);
+    if (data->notif_pipe_fd == -1){ // Failed in connection (open notif pipe failed)
+      if (write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+        perror("Error writing OP_CODE and result to response pipe");
+      }
       perror("Error opening client notification pipe");
-      return NULL;
+      close(data->resp_pipe_fd);
+      close(data->req_pipe_fd);
+      free(data);
+      continue;
     }
 
     response_connection[1] = '0';
 
-    if (write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1) { ////////////////////////////// verificar
+    if (write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1) {
         perror("Error writing OP_CODE and result to response pipe");
+        close(data->resp_pipe_fd);
+        close(data->req_pipe_fd);
+        close(data->notif_pipe_fd);
+        free(data);
+        continue;
     }
 
-    int client_connected = 1;
+    set_client_info(session_id, data); // Store info
 
     while(client_connected){
 
@@ -359,12 +405,20 @@ void* client_thread(void *args) {
       int read_output;
       char key[MAX_STRING_SIZE + 1];
 
-      if ((read_output = read_all(req_pipe_fd, &op_code, sizeof(char), &interrupted_read)) < 0){
+      if ((read_output = read_all(data->req_pipe_fd, &op_code, sizeof(char), &interrupted_read)) < 0){
+        close(data->resp_pipe_fd);
+        close(data->req_pipe_fd);
+        close(data->notif_pipe_fd);
+        free(data);
         perror("Couldn't read message from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
-        break;
+        continue;
       }else if(read_output == 0){
+        close(data->resp_pipe_fd);
+        close(data->req_pipe_fd);
+        close(data->notif_pipe_fd);
+        free(data);
         perror("Got EOF while trying to read message from client.");
-        break;
+        continue;
       }
 
       switch(op_code){
@@ -374,25 +428,24 @@ void* client_thread(void *args) {
           response_connection[0] = OP_CODE_DISCONNECT;
           response_connection[1] = '1';
 
-          printf("Client disconnecting.\n");
 
           if(kvs_disconnect(session_id) != 0){
-            if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+            if(write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
               perror("Error writing OP_CODE and result to response pipe");
-              break;
+              continue;
             }
           }
 
           response_connection[1] = '0';
 
-          if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+          if(write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
             perror("Error writing OP_CODE and result to response pipe");
           }
 
-          close(req_pipe_fd);
-          close(resp_pipe_fd);
-          close(notif_pipe_fd);
-          free(client);
+          close(data->req_pipe_fd);
+          close(data->resp_pipe_fd);
+          close(data->notif_pipe_fd);
+          free(data);
           client_connected = 0;
           break;
 
@@ -400,18 +453,18 @@ void* client_thread(void *args) {
 
           response_connection[0] = OP_CODE_SUBSCRIBE;
           response_connection[1] = '0';
-          if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, &interrupted_read)) < 0){
+          if ((read_output = read_all(data->req_pipe_fd, key, MAX_STRING_SIZE + 1, &interrupted_read)) < 0){
             perror("Couldn't read key from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
             break;
           }else if(read_output == 0){
             perror("Got EOF while trying to read key from client.");
             break;
           }
-          if(kvs_subscribe(session_id, notif_pipe_fd, key) == 0){
+          if(kvs_subscribe(session_id, data->notif_pipe_fd, key) == 0){
             response_connection[1] = '1';
             add_key_session_avl(session_id, key);
           }
-          if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+          if(write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
             perror("Error writing OP_CODE and result to response pipe");
           }
           break;
@@ -420,7 +473,7 @@ void* client_thread(void *args) {
 
           response_connection[0] = OP_CODE_UNSUBSCRIBE;
           response_connection[1] = '1';
-          if ((read_output = read_all(req_pipe_fd, key, MAX_STRING_SIZE + 1, &interrupted_read)) < 0){
+          if ((read_output = read_all(data->req_pipe_fd, key, MAX_STRING_SIZE + 1, &interrupted_read)) < 0){
             perror("Couldn't read key from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
             break;
           }else if(read_output == 0){
@@ -431,7 +484,7 @@ void* client_thread(void *args) {
             response_connection[1] = '0';
             remove_key_session_avl(session_id, key);
           }
-          if(write_all(resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
+          if(write_all(data->resp_pipe_fd, response_connection, sizeof(char) * 2) == -1){
             perror("Error writing OP_CODE and result to response pipe");
           }
           break;
@@ -536,8 +589,6 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-
-
   // Struct to pass arguments to the thread function.
   job_args = malloc(sizeof(JobThreadArgs));
   if (!job_args){
@@ -583,9 +634,24 @@ int main(int argc, char *argv[]) {
 
   pthread_mutex_init(&queue_mutex, NULL);
 
+  // Signal handler
+  if (signal(SIGUSR1, sig_handler) == SIG_ERR) {
+    exit(EXIT_FAILURE);
+  }
+
   while (1){
+    int DEBUG = 0;
+
+    if(sig_flag == 1){
+      avl_clean_sessions();
+      sig_flag = 0;
+      DEBUG = 1;
+    }
+
+    if (DEBUG) printf("DEBUG11 \n");
+
     size_t length_client_con = 1 + (MAX_PIPE_PATH_LENGTH + 1) * 3;
-    char client_connection[length_client_con]; /////////////////////CONFIRMAR SE É SUPOSTO TER MAIS 1 PARA O \00 OU NAO ////////////////////////7
+    char client_connection[length_client_con];
     char *aux_client_conn;
     int interrupted_read = 0;////////////////// dar handle aqui e na api tmb ///////////////////////////////////////////////////////////////
     int read_output;
@@ -593,6 +659,9 @@ int main(int argc, char *argv[]) {
     ClientData *data;
 
     if ((read_output = read_all(server_pipe_fd, client_connection, length_client_con, &interrupted_read)) < 0){
+      if (interrupted_read) {
+        continue;
+      }
       perror("Couldn't read connection message from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
       break;
     }
@@ -601,17 +670,14 @@ int main(int argc, char *argv[]) {
       perror("Got EOF while trying to read message from client.");
       break;
     }
-
-    // if(read(server_pipe_fd, client_connection, length_client_con) < 0){
-    //   perror("Couldn't read connection message from client."); ////////////////////////////////////////////////////// Aqui é suposto terminar o server do tipo se alguem removeu o fifo que ele tinha criado antes?
-    //   // break;
-    //   //while (1) printf("break\n");///////////////////////////////////////////////////////////////////////////////////////////////
-    // }
+    if (DEBUG) printf("DEBUG22 \n");
 
     if (*client_connection != OP_CODE_CONNECT){
       fprintf(stderr, "Message from client had OPCODE: %c instead of OPCODE: 1.\n", client_connection[0]);
       continue;
     }
+
+    if (DEBUG) printf("DEBUG33 \n");
 
     client = malloc(sizeof(ClientNode));
     if (client == NULL){
@@ -619,8 +685,15 @@ int main(int argc, char *argv[]) {
       continue;
     }
 
+    data = malloc(sizeof(ClientData));
+    if (data == NULL){
+      perror("Could not allocate memory to client data structure.");
+      free(client);
+      continue;
+    }
+
     client->next = NULL;
-    data = &client->data;
+    client->data = data;
 
     aux_client_conn = client_connection + 1;
     safe_strncpy(data->req_pipe_path, aux_client_conn, MAX_PIPE_PATH_LENGTH + 1);

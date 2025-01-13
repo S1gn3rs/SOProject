@@ -1,6 +1,5 @@
 #include "kvs.h"
 
-
 int hash(const char *key) {
     int first_letter = tolower(key[0]);
     if (first_letter >= 'a' && first_letter <= 'z') {
@@ -137,7 +136,6 @@ int remove_node_subscriptions_recursive(AVLNode *root,\
 
     int result = 0;
     int session_id;
-
 
     if (!root) return 0;
 
