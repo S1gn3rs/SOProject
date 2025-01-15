@@ -1,9 +1,0 @@
-# This test verifies KVSERROR with keys that never existed and with a key
-# that was deleted. It's also a smoke test for the WRITE operation
-#WRITE [(a2,anna)(a1,dinis)(a4,carlota)]
-#READ [a,b,c,d]
-#WRITE [(a3,bernardo)]
-#SHOW
-#DELETE [c]
-#READ [c]
-#SHOW
