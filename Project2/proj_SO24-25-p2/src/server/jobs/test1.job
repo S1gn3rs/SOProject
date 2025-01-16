@@ -1,0 +1,64 @@
+# Tentar connectar mais que S clients e mostrar que não é possível e que os outros ficam à
+# espera
+
+# INITIALIZE
+
+
+WRITE [(A,1)(B,0)(C,v1)(chave2,valor-exemplo)(chave3,valor-exemplo3)(C,valor4)]
+WRITE [(1,1)(2,0)(3,v1)(4,1)(5,0)(6,v1)(7,1)(8,0)(9,v1)(a,1)(b,0)(c,v1)]
+WRITE [(zzz,2)]
+
+WAIT 25000
+
+# TEST WRITE DELETE NOTIF
+
+WRITE [(A,1)(B,0)(C,v1)(chave2,valor-exemplo)(chave3,valor-exemplo3)(C,valor4)]
+DELETE [B,C,A]
+
+# TEST SUBSCRIBE UNVALID KEY
+
+# SUBSCRIBE [Z]
+
+
+# WRITE [(a2,v1)]
+# READ [chave2]
+# WRITE [(a2,B)]
+# WRITE [(chave3,valor-exemplo2)(umaChave,umValor)]
+
+# BACKUP
+# WRITE [(C,valor-exemplo2)]
+# WRITE [(A,1)(B,0)(C,v1)(chave2,valor-exemplo)(chave3,valor-exemplo3)(C,valor4)]
+# DELETE [C,chaveAleatoria]
+# WRITE [(cbhave2,valor-exemplo2)(umaChave,umValor)]
+# DELETE [C,chaveAleatoria]
+# DELETE [B,C,A]
+# DELETE [1,2,3,4,5,6,7,8,9,a,b,c]
+# DELETE [1]
+# WAIT 8000
+# WRITE [(1,1)(2,0)(3,v1)(4,1)(5,0)(6,v1)(7,1)(8,0)(9,v1)(a,1)(b,0)(c,v1)]
+# WRITE [(1,1)(2,0)(3,v1)(4,1)(5,0)(6,v1)(7,1)(8,1)(9,v1)(a,1)(b,0)(c,v1)]
+# WRITE [(cave2,valor-exemplo2)(umaChave,umValor)]
+# DELETE [umaChave]
+# BACKUP
+
+#CONNECT mostrar que quando se tentam ligar mais do que S apenas os primeiros S ficam ligados e os outros ficam à espera
+
+
+
+#DISCONNECT mostar que quando damos disconnect a um o que está à espera fica com a sessão iniciada.
+#MOSTRAR QUE QUANDO TODOS SE DESCONNECTAM O SERVER FICA UP
+
+
+#SUBSCRIBE Mostrar que o cliente consegue subscrever e receber notificaçoes tanto de delete como de write
+#Que não pode subscrever Keys que não existem, nem ultrapassar o número limite de subscrições dele
+#Se acontecer um delete da chave que o mesmo estava subscrito e se estava no limite de subscriçoes ele pode subscrever a outra chave
+#Se dermos subscrive à mesma Key ele deixa mas internamente continua com a mesma quantidade de subscriçoes
+
+
+#NOTIFICATION Se um write fizer duas alterações à mesma chave que o cliente está subscrito o cliente apenas é notificado da alteração mais à direita do write
+#Se for feita uma alteração tanto do write como do delete os subscritores recebem as notificaçoes
+
+#UNSUBSCRIBE Mostrar que dá para dar unsubscribe de uma chave
+#Mostrar que após um UNSUBSCRIBE O cliente não recebe notificação
+#Mostrar que o cliente não consegue dar unsubscribe a uma key q n esta subscrito
+
